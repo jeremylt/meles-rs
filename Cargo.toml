@@ -1,0 +1,5 @@
+[workspace]
+members = [
+        "ceed/ex1-volume",
+        "ceed/ex2-surface",
+]
