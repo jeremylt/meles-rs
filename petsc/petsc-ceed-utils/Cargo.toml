@@ -1,5 +1,5 @@
 [package]
-name = "mesh"
+name = "petsc-ceed-utils"
 version = "0.1.0"
 authors = [
     "Jeremy L Thompson <jeremy@jeremylt.org>",
@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 libceed = { path = "../../../libCEED/rust/libceed" }
+petsc-rs = { path = "../../../petsc-rs" }

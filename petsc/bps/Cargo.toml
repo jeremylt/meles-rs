@@ -2,7 +2,7 @@
 name = "bps"
 version = "0.1.0"
 authors = [
-    "Jeremy L Thompson <thompson.jeremy.luke@gmail.com>",
+    "Jeremy L Thompson <jeremy@jeremylt.org>",
 ]
 edition = "2018"
 
@@ -10,3 +10,4 @@ edition = "2018"
 structopt = { version = "0.3", default-features = false }
 libceed = { path = "../../../libCEED/rust/libceed" }
 petsc-rs = { path = "../../../petsc-rs" }
+petsc-ceed-utils = { path = "../petsc-ceed-utils" }

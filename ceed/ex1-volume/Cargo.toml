@@ -2,7 +2,7 @@
 name = "ex1-volume"
 version = "0.1.0"
 authors = [
-    "Jeremy L Thompson <thompson.jeremy.luke@gmail.com>",
+    "Jeremy L Thompson <jeremy@jeremylt.org>",
 ]
 edition = "2018"
 

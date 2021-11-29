@@ -31,8 +31,17 @@ impl PetscOpt for Opt {
     fn from_petsc_opt_builder(pob: &mut PetscOptBuilder) -> petsc_rs::Result<Self> {
         let m = pob.options_int("-m", "number of mesh points in x-direction", "ksp-ex2", 8)?;
         let n = pob.options_int("-n", "number of mesh points in y-direction", "ksp-ex2", 7)?;
-        let view_exact_sol = pob.options_bool("-view_exact_sol", "write exact solution vector to stdout", "ksp-ex2", false)?;
-        Ok(Opt { m, n, view_exact_sol })
+        let view_exact_sol = pob.options_bool(
+            "-view_exact_sol",
+            "write exact solution vector to stdout",
+            "ksp-ex2",
+            false,
+        )?;
+        Ok(Opt {
+            m,
+            n,
+            view_exact_sol,
+        })
     }
 }
 
@@ -48,12 +57,16 @@ fn main() -> petsc_rs::Result<()> {
     // or init with no options
     // let petsc = Petsc::init_no_args()?;
 
-    let Opt {m, n, view_exact_sol} = petsc.options_get()?;
+    let Opt {
+        m,
+        n,
+        view_exact_sol,
+    } = petsc.options_get()?;
 
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-         Compute the matrix and right-hand-side vector that define
-         the linear system, Ax = b.
-     - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+        Compute the matrix and right-hand-side vector that define
+        the linear system, Ax = b.
+    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
     /*
         Create parallel matrix, specifying only its global dimensions.
         When using MatCreate(), the matrix format can be specified at
@@ -67,7 +80,7 @@ fn main() -> petsc_rs::Result<()> {
 
     #[allow(non_snake_case)]
     let mut A = petsc.mat_create()?;
-    A.set_sizes(None, None, Some(m*n), Some(m*n))?;
+    A.set_sizes(None, None, Some(m * n), Some(m * n))?;
     A.set_from_options()?;
     A.mpi_aij_set_preallocation(5, None, 5, None)?;
     A.seq_aij_set_preallocation(5, None)?;
@@ -81,7 +94,7 @@ fn main() -> petsc_rs::Result<()> {
         contiguous chunks of rows across the processors.  Determine which
         rows of the matrix are locally owned.
     */
-  let mat_ownership_range = A.get_ownership_range()?;
+    let mat_ownership_range = A.get_ownership_range()?;
 
     /*
         Set matrix elements for the 2-D, five-point stencil in parallel.
@@ -97,18 +110,35 @@ fn main() -> petsc_rs::Result<()> {
 
         Note MatAssemblyBegin(), MatAssemblyEnd() are automatically call by `assemble_with()`.
     */
-    A.assemble_with(mat_ownership_range.map(|ii| {
-            let mut data_vec = vec![];
-            let i = ii/n;
-            let j = ii - i*n;
-            if i > 0   { let jj = ii - n; data_vec.push((ii, jj, PetscScalar::from(-1.0))); }
-            if i < m-1 { let jj = ii + n; data_vec.push((ii, jj, PetscScalar::from(-1.0))); }
-            if j > 0   { let jj = ii - 1; data_vec.push((ii, jj, PetscScalar::from(-1.0))); }
-            if j < n-1 { let jj = ii + 1; data_vec.push((ii, jj, PetscScalar::from(-1.0))); }
-            data_vec.push((ii, ii, PetscScalar::from(4.0)));
-            data_vec
-        }).flatten(), 
-        InsertMode::ADD_VALUES, MatAssemblyType::MAT_FINAL_ASSEMBLY)?;
+    A.assemble_with(
+        mat_ownership_range
+            .map(|ii| {
+                let mut data_vec = vec![];
+                let i = ii / n;
+                let j = ii - i * n;
+                if i > 0 {
+                    let jj = ii - n;
+                    data_vec.push((ii, jj, PetscScalar::from(-1.0)));
+                }
+                if i < m - 1 {
+                    let jj = ii + n;
+                    data_vec.push((ii, jj, PetscScalar::from(-1.0)));
+                }
+                if j > 0 {
+                    let jj = ii - 1;
+                    data_vec.push((ii, jj, PetscScalar::from(-1.0)));
+                }
+                if j < n - 1 {
+                    let jj = ii + 1;
+                    data_vec.push((ii, jj, PetscScalar::from(-1.0)));
+                }
+                data_vec.push((ii, ii, PetscScalar::from(4.0)));
+                data_vec
+            })
+            .flatten(),
+        InsertMode::ADD_VALUES,
+        MatAssemblyType::MAT_FINAL_ASSEMBLY,
+    )?;
 
     /* A is symmetric. Set symmetric flag to enable ICC/Cholesky preconditioner */
     A.set_option(MatOption::MAT_SYMMETRIC, true)?;
@@ -131,7 +161,7 @@ fn main() -> petsc_rs::Result<()> {
     */
     let mut u = petsc.vec_create()?;
     u.set_name("Exact Solution")?;
-    u.set_sizes(None, Some(n*m))?;
+    u.set_sizes(None, Some(n * m))?;
     u.set_from_options()?;
     let mut b = u.duplicate()?;
     let mut x = u.duplicate()?;
@@ -145,15 +175,14 @@ fn main() -> petsc_rs::Result<()> {
     Mat::mult(&A, &u, &mut b)?;
 
     // View the exact solution vector if desired
-    if view_exact_sol
-    {
+    if view_exact_sol {
         let viewer = Viewer::create_ascii_stdout(petsc.world())?;
         u.view_with(Some(&viewer))?;
     }
 
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-                Create the linear solver and set various options
-     - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+               Create the linear solver and set various options
+    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
     let mut ksp = petsc.ksp_create()?;
 
     /*
@@ -172,7 +201,12 @@ fn main() -> petsc_rs::Result<()> {
           KSPSetFromOptions().  All of these defaults can be
           overridden at runtime, as indicated below.
     */
-    ksp.set_tolerances(Some(1.0e-2/(((m+1)*(n+1)) as PetscReal)), Some(1.0e-50), None, None)?;
+    ksp.set_tolerances(
+        Some(1.0e-2 / (((m + 1) * (n + 1)) as PetscReal)),
+        Some(1.0e-50),
+        None,
+        None,
+    )?;
 
     /*
         Set runtime options, e.g.,
@@ -184,18 +218,22 @@ fn main() -> petsc_rs::Result<()> {
     ksp.set_from_options()?;
 
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-                        Solve the linear system
-        - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+                    Solve the linear system
+    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
     ksp.solve(Some(&b), &mut x)?;
 
-
     /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-                      Check the solution and clean up
-     - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+                     Check the solution and clean up
+    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
     x.axpy(PetscScalar::from(-1.0), &u)?;
     let x_norm = x.norm(NormType::NORM_2)?;
     let iters = ksp.get_iteration_number()?;
-    petsc_println!(petsc.world(), "Norm of error {:.5e}, Iters {}", x_norm, iters)?;
+    petsc_println!(
+        petsc.world(),
+        "Norm of error {:.5e}, Iters {}",
+        x_norm,
+        iters
+    )?;
 
     /*
         All PETSc objects are automatically destroyed when they are no longer needed.
