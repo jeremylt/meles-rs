@@ -15,6 +15,7 @@
 // testbed platforms, in support of the nation's exascale computing imperative.
 
 use libceed::{prelude::*, Ceed};
+use mpi;
 use petsc_rs::prelude::*;
 
 // ----------------------------------------------------------------------------
@@ -41,12 +42,12 @@ pub fn kershaw_transformation<'a>(
     // smooth -- see the commented versions at the end.
     fn step(a: PetscScalar, b: PetscScalar, x: PetscScalar) -> PetscScalar {
         if x <= 0. {
-            return a;
+            a
+        } else if x >= 1. {
+            b
+        } else {
+            a + (b - a) * (x)
         }
-        if x >= 1. {
-            return b;
-        }
-        a + (b - a) * (x)
     }
 
     // 1D transformation at the right boundary
@@ -64,10 +65,10 @@ pub fn kershaw_transformation<'a>(
     }
 
     let mut coords = dm.get_coordinates_local()?;
-
     let num_coords = coords.get_local_size()?;
     let mut coord_view = coords.view_mut()?;
 
+    // Apply transformations based upon layer
     for i in (0..num_coords as usize).step_by(3) {
         let (x, y, z) = (coord_view[i], coord_view[i + 1], coord_view[i + 2]);
         let layer = 6 * x as i32;
@@ -96,6 +97,63 @@ pub fn kershaw_transformation<'a>(
             }
         }
     }
+
+    Ok(())
+}
+
+// -----------------------------------------------------------------------------
+// Setup DM
+// -----------------------------------------------------------------------------
+pub fn setup_dm_by_order<'a, BcFn>(
+    comm: &'a mpi::topology::UserCommunicator,
+    mut dm: petsc_rs::dm::DM<'a, 'a>,
+    order: petsc_rs::PetscInt,
+    num_components: petsc_rs::PetscInt,
+    dimemsion: petsc_rs::PetscInt,
+    enforce_boundary_conditions: bool,
+    user_boundary_function: Option<BcFn>,
+) -> petsc_rs::Result<()>
+where
+    BcFn: Fn(
+            petsc_rs::PetscInt,
+            petsc_rs::PetscReal,
+            &[petsc_rs::PetscReal],
+            petsc_rs::PetscInt,
+            &mut [petsc_rs::PetscScalar],
+        ) -> petsc_rs::Result<()>
+        + 'a,
+{
+    // Setup FE
+    let fe = petsc_rs::dm::FEDisc::create_lagrange(
+        &comm,
+        dimemsion,
+        num_components,
+        false,
+        order,
+        None,
+    )?;
+    dm.add_field(None, fe)?;
+
+    // Setup DM
+    let ds = dm.create_ds()?;
+    if enforce_boundary_conditions {
+        let has_label = dm.has_label("marker")?;
+        if !has_label {
+            dm.create_label("marker")?;
+            let mut label = dm.get_label("marker")?.unwrap();
+            dm.plex_mark_boundary_faces(1, &mut label)?;
+        }
+        let mut label = dm.get_label("marker")?.unwrap();
+        dm.add_boundary_essential(
+            "wall",
+            &mut label,
+            &[],
+            1,
+            &[],
+            user_boundary_function.unwrap(),
+        )?;
+    }
+    dm.plex_set_closure_permutation_tensor_default(None)?;
 
     Ok(())
 }
