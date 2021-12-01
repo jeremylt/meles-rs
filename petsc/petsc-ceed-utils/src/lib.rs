@@ -17,15 +17,37 @@
 use libceed::{prelude::*, Ceed};
 use mpi;
 use petsc_rs::prelude::*;
+use std::fmt;
 
 // ----------------------------------------------------------------------------
-// Involute index - essential BC DoFs are encoded in closure incides as -(i+1)
+// Error handling
 // ----------------------------------------------------------------------------
-pub(crate) fn involute(i: PetscInt) -> PetscInt {
-    if i >= 0 {
-        i
-    } else {
-        -(i + 1)
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Debug)]
+pub struct Error {
+    pub message: String,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl From<libceed::Error> for Error {
+    fn from(ceed_error: libceed::Error) -> Self {
+        Self {
+            message: ceed_error.to_string(),
+        }
+    }
+}
+
+impl From<petsc_rs::PetscError> for Error {
+    fn from(petsc_error: petsc_rs::PetscError) -> Self {
+        Self {
+            message: petsc_error.to_string(),
+        }
     }
 }
 
@@ -37,7 +59,7 @@ pub(crate) fn involute(i: PetscInt) -> PetscInt {
 pub fn kershaw_transformation<'a>(
     mut dm: petsc_rs::dm::DM<'a, 'a>,
     eps: PetscScalar,
-) -> petsc_rs::Result<()> {
+) -> crate::Result<()> {
     // Transition from a value of "a" for x=0, to a value of "b" for x=1.  Optionally
     // smooth -- see the commented versions at the end.
     fn step(a: PetscScalar, b: PetscScalar, x: PetscScalar) -> PetscScalar {
@@ -112,7 +134,7 @@ pub fn setup_dm_by_order<'a, BcFn>(
     dimemsion: petsc_rs::PetscInt,
     enforce_boundary_conditions: bool,
     user_boundary_function: Option<BcFn>,
-) -> petsc_rs::Result<()>
+) -> crate::Result<()>
 where
     BcFn: Fn(
             petsc_rs::PetscInt,
@@ -155,6 +177,32 @@ where
     }
     dm.plex_set_closure_permutation_tensor_default(None)?;
 
+    Ok(())
+}
+
+// ----------------------------------------------------------------------------
+// Involute index - essential BC DoFs are encoded in closure incides as -(i+1)
+// ----------------------------------------------------------------------------
+pub(crate) fn involute(i: PetscInt) -> PetscInt {
+    if i >= 0 {
+        i
+    } else {
+        -(i + 1)
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Setup Restriction from DMPlex
+// -----------------------------------------------------------------------------
+pub fn create_restriction_from_dm_plex(
+    dm: petsc_rs::dm::DM,
+    ceed: libceed::Ceed,
+    p: petsc_rs::PetscInt,
+    topological_dimension: petsc_rs::PetscInt,
+    height: petsc_rs::PetscInt,
+    label: petsc_rs::dm::DMLabel,
+    value: petsc_rs::PetscInt,
+) -> crate::Result<()> {
     Ok(())
 }
 
