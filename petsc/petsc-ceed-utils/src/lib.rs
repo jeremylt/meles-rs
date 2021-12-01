@@ -157,7 +157,7 @@ where
     dm.add_field(None, fe)?;
 
     // Setup DM
-    let ds = dm.create_ds()?;
+    let _ = dm.create_ds()?;
     if enforce_boundary_conditions {
         let has_label = dm.has_label("marker")?;
         if !has_label {
