@@ -1,55 +1,4 @@
-// Copyright (c) 2017-2021, Lawrence Livermore National Security, LLC.
-// Produced at the Lawrence Livermore National Laboratory. LLNL-CODE-734707.
-// All Rights reserved. See files LICENSE and NOTICE for details.
-//
-// This file is part of CEED, a collection of benchmarks, miniapps, software
-// libraries and APIs for efficient high-order finite element and spectral
-// element discretizations for exascale applications. For more information and
-// source code availability see http://github.com/ceed.
-//
-// The CEED research is supported by the Exascale Computing Project 17-SC-20-SC,
-// a collaborative effort of two U.S. Department of Energy organizations (Office
-// of Science and the National Nuclear Security Administration) responsible for
-// the planning and preparation of a capable exascale ecosystem, including
-// software, applications, hardware, advanced system engineering and early
-// testbed platforms, in support of the nation's exascale computing imperative.
-
-use libceed::{prelude::*, Ceed};
-use mpi;
-use petsc_rs::prelude::*;
-use std::fmt;
-
-// ----------------------------------------------------------------------------
-// Error handling
-// ----------------------------------------------------------------------------
-pub type Result<T> = std::result::Result<T, Error>;
-
-#[derive(Debug)]
-pub struct Error {
-    pub message: String,
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl From<libceed::Error> for Error {
-    fn from(ceed_error: libceed::Error) -> Self {
-        Self {
-            message: ceed_error.to_string(),
-        }
-    }
-}
-
-impl From<petsc_rs::PetscError> for Error {
-    fn from(petsc_error: petsc_rs::PetscError) -> Self {
-        Self {
-            message: petsc_error.to_string(),
-        }
-    }
-}
+use crate::prelude::*;
 
 // -----------------------------------------------------------------------------
 // Apply 3D Kershaw mesh transformation
@@ -180,17 +129,6 @@ where
     Ok(())
 }
 
-// ----------------------------------------------------------------------------
-// Involute index - essential BC DoFs are encoded in closure incides as -(i+1)
-// ----------------------------------------------------------------------------
-pub(crate) fn involute(i: PetscInt) -> PetscInt {
-    if i >= 0 {
-        i
-    } else {
-        -(i + 1)
-    }
-}
-
 // -----------------------------------------------------------------------------
 // Setup Restriction from DMPlex
 // -----------------------------------------------------------------------------
@@ -203,7 +141,16 @@ pub fn create_restriction_from_dm_plex(
     label: petsc_rs::dm::DMLabel,
     value: petsc_rs::PetscInt,
 ) -> crate::Result<()> {
+    /// Involute index - essential BC DoFs are encoded in closure incides as -(i+1)
+    fn involute(i: PetscInt) -> PetscInt {
+        if i >= 0 {
+            i
+        } else {
+            -(i + 1)
+        }
+    }
+
     Ok(())
 }
 
-// ----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------

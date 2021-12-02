@@ -1,6 +1,12 @@
-[workspace]
-members = [
-        "ceed/ex1-volume",
-        "ceed/ex2-surface",
-        "petsc/bps",
+[package]
+name = "meles"
+version = "0.1.0"
+authors = [
+    "Jeremy L Thompson <jeremy@jeremylt.org>",
 ]
+edition = "2018"
+
+[dependencies]
+libceed = { path = "../libCEED/rust/libceed" }
+mpi = { git = "https://github.com/rsmpi/rsmpi.git", rev = "82e1d35", default-features = false }
+petsc-rs = { path = "../petsc-rs" }
