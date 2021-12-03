@@ -5,7 +5,7 @@ use crate::prelude::*;
 // The eps parameters are in (0, 1]
 // Uniform mesh is recovered for eps=1
 // -----------------------------------------------------------------------------
-pub fn kershaw_transformation<'a>(
+pub(crate) fn kershaw_transformation<'a>(
     mut dm: petsc_rs::dm::DM<'a, 'a>,
     eps: PetscScalar,
 ) -> crate::Result<()> {
@@ -75,7 +75,7 @@ pub fn kershaw_transformation<'a>(
 // -----------------------------------------------------------------------------
 // Setup DM
 // -----------------------------------------------------------------------------
-pub fn setup_dm_by_order<'a, BcFn>(
+pub(crate) fn setup_dm_by_order<'a, BcFn>(
     comm: &'a mpi::topology::UserCommunicator,
     mut dm: petsc_rs::dm::DM<'a, 'a>,
     order: petsc_rs::PetscInt,
@@ -132,7 +132,7 @@ where
 // -----------------------------------------------------------------------------
 // Setup Restriction from DMPlex
 // -----------------------------------------------------------------------------
-pub fn create_restriction_from_dm_plex(
+pub(crate) fn create_restriction_from_dm_plex(
     dm: petsc_rs::dm::DM,
     ceed: libceed::Ceed,
     p: petsc_rs::PetscInt,
@@ -149,6 +149,25 @@ pub fn create_restriction_from_dm_plex(
             -(i + 1)
         }
     }
+
+    Ok(())
+}
+
+// -----------------------------------------------------------------------------
+// Setup Restriction from DMPlex
+// -----------------------------------------------------------------------------
+pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
+    // Get command line options
+
+    // Create DM
+
+    // Set boundaries, order
+
+    // Create work vectors
+
+    // Create libCEED operators
+
+    // Set MatShell
 
     Ok(())
 }

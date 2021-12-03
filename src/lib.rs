@@ -20,6 +20,7 @@ pub mod prelude {
 // Modules
 // -----------------------------------------------------------------------------
 pub(crate) mod dm;
+pub(crate) mod petsc_ops;
 
 // -----------------------------------------------------------------------------
 // Error handling
@@ -145,6 +146,45 @@ impl<'a> Meles<'a> {
             crate::MethodType::BenchmarkProblem => Ok(()), /* TODO: Build DM for BPs
                                                             * TODO: Ratel methods */
         }
+    }
+
+    /// Return a PETSc MatShell for the DM that uses a libCEED operator
+    ///
+    /// # arguments
+    ///
+    /// * `dm` - DM for the MatShell
+    ///
+    /// ```
+    /// # use meles::prelude::*;
+    /// # use petsc_rs::prelude::*;
+    /// # fn main() -> meles::Result<()> {
+    /// let petsc = petsc_rs::Petsc::init_no_args()?;
+    /// let meles = meles::Meles::new(&petsc, "./examples/meles.yml")?;
+    /// let dm = meles.dm(meles::MethodType::BenchmarkProblem)?;
+    /// let mat = meles.mat_shell_from_dm(dm)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn mat_shell_from_dm(
+        &self,
+        dm: petsc_rs::dm::DM<'a, 'a>,
+    ) -> Result<petsc_rs::mat::MatShell<'a, 'a, &'a crate::Meles>> {
+        // Create MatShell from DM
+        let mut mat = dm.create_matrix()?.into_shell(Box::new(self))?;
+
+        // Set operations
+        mat.shell_set_operation_mvv(MatOperation::MATOP_MULT, |m, x, y| {
+            let ctx = m.get_mat_data().unwrap();
+            crate::petsc_ops::apply_local_ceed_op(x, y, ctx)?;
+            Ok(())
+        })?;
+        mat.shell_set_operation_mv(MatOperation::MATOP_GET_DIAGONAL, |m, d| {
+            let ctx = m.get_mat_data().unwrap();
+            crate::petsc_ops::get_diagonal_ceed(d, ctx)?;
+            Ok(())
+        })?;
+
+        Ok(mat)
     }
 }
 
