@@ -13,6 +13,7 @@ pub mod prelude {
     pub(crate) use mpi;
     pub(crate) use petsc_rs::prelude::*;
     pub(crate) use std::fmt;
+    pub(crate) use std::mem;
 }
 
 // -----------------------------------------------------------------------------
@@ -65,9 +66,8 @@ pub enum MethodType {
 // -----------------------------------------------------------------------------
 // Meles context
 // -----------------------------------------------------------------------------
-#[derive(Debug)]
 pub struct Meles {
-    yml: String,
+    petsc: petsc_rs::Petsc,
     ceed: libceed::Ceed,
     method: crate::MethodType,
 }
@@ -89,15 +89,38 @@ impl Meles {
     /// * `yml` - Filepath to specification yml
     ///
     /// ```
-    /// let meles = meles::Meles::new("/path/to/yml.yml");
+    /// # use meles::prelude::*;
+    /// # use petsc_rs::prelude::*;
+    /// # fn main() -> meles::Result<()> {
+    /// let petsc = petsc_rs::Petsc::init_no_args()?;
+    /// let meles = meles::Meles::new(petsc, "./examples/meles.yml")?;
+    /// # Ok(())
+    /// # }
     /// ```
-    pub fn new(yml: impl Into<String> + Clone) -> Self {
-        // TODO: Verify yml path, initalized correct ceed
-        Self {
-            yml: yml.into().clone(),
-            ceed: libceed::Ceed::init("/cpu/self"),
-            method: crate::MethodType::BenchmarkProblem,
+    pub fn new(petsc: petsc_rs::Petsc, yml: impl Into<String> + Clone) -> Result<Self> {
+        // Insert yaml into options database
+        let yml = yml.into().clone();
+        petsc.options_insert_file(&yml)?;
+
+        // Get ceed resource
+        struct Opt {
+            ceed_resource: String,
         }
+        impl PetscOpt for Opt {
+            fn from_petsc_opt_builder(pob: &mut PetscOptBuilder) -> petsc_rs::Result<Self> {
+                let ceed_resource =
+                    pob.options_string("-ceed", "ceed_resource", "", "/cpu/self")?;
+                Ok(Opt { ceed_resource })
+            }
+        }
+        let Opt { ceed_resource } = petsc.options_get()?;
+
+        // Return self
+        Ok(Self {
+            petsc: petsc,
+            ceed: libceed::Ceed::init(&ceed_resource),
+            method: crate::MethodType::BenchmarkProblem,
+        })
     }
 
     /// Returns a PETSc DM initialized with the specified yml filepath
@@ -108,9 +131,11 @@ impl Meles {
     ///
     /// ```
     /// # use meles::prelude::*;
+    /// # use petsc_rs::prelude::*;
     /// # fn main() -> meles::Result<()> {
-    /// let mut meles = meles::Meles::new("/path/to/yml.yml");
-    /// let dm = meles.create_dm(meles::MethodType::BenchmarkProblem)?;
+    /// let petsc = petsc_rs::Petsc::init_no_args()?;
+    /// let meles = meles::Meles::new(petsc, "./examples/meles.yml")?;
+    /// let dm = meles.create_dm(meles::MethodType::BenchmarkProblem);
     /// # Ok(())
     /// # }
     /// ```
