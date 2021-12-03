@@ -135,7 +135,7 @@ impl Meles {
     /// # fn main() -> meles::Result<()> {
     /// let petsc = petsc_rs::Petsc::init_no_args()?;
     /// let meles = meles::Meles::new(petsc, "./examples/meles.yml")?;
-    /// let dm = meles.create_dm(meles::MethodType::BenchmarkProblem);
+    /// let dm = meles.create_dm(meles::MethodType::BenchmarkProblem)?;
     /// # Ok(())
     /// # }
     /// ```
