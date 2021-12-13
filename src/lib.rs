@@ -144,8 +144,8 @@ impl<'a> Meles<'a> {
     pub fn dm(mut self, method: crate::MethodType) -> Result<()> {
         self.method = method;
         match self.method {
-            crate::MethodType::BenchmarkProblem => crate::ceed_bps::create_dm(self), /* TODO: Build DM for BPs
-                                                                                      * TODO: Ratel methods */
+            crate::MethodType::BenchmarkProblem => crate::ceed_bps::create_dm(self),
+            // TODO: Ratel methods
         }
     }
 
