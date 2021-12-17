@@ -12,6 +12,7 @@ pub mod prelude {
     pub(crate) use libceed::{prelude::*, Ceed};
     pub(crate) use mpi;
     pub(crate) use petsc_rs::prelude::*;
+    pub(crate) use std::cell::RefCell;
     pub(crate) use std::fmt;
     pub(crate) use std::mem;
 }
@@ -69,9 +70,15 @@ pub enum MethodType {
 // Meles context
 // -----------------------------------------------------------------------------
 pub struct Meles<'a> {
-    petsc: &'a petsc_rs::Petsc,
-    ceed: libceed::Ceed,
-    method: crate::MethodType,
+    pub(crate) petsc: &'a petsc_rs::Petsc,
+    pub(crate) ceed: libceed::Ceed,
+    pub(crate) method: crate::MethodType,
+    pub(crate) mesh_dm: RefCell<petsc_rs::dm::DM<'a, 'a>>,
+    pub(crate) x_loc: RefCell<petsc_rs::vector::Vector<'a>>,
+    pub(crate) y_loc: RefCell<petsc_rs::vector::Vector<'a>>,
+    pub(crate) x_loc_ceed: RefCell<Vector<'a>>,
+    pub(crate) y_loc_ceed: RefCell<Vector<'a>>,
+    pub(crate) ceed_op: RefCell<Operator<'a>>,
 }
 
 // -----------------------------------------------------------------------------
