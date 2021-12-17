@@ -118,7 +118,7 @@ impl<'a> Meles<'a> {
         impl PetscOpt for Opt {
             fn from_petsc_opt_builder(pob: &mut PetscOptBuilder) -> petsc_rs::Result<Self> {
                 let ceed_resource =
-                    pob.options_string("-ceed", "ceed resource", "", "/cpu/self")?;
+                    pob.options_string("-ceed", "Ceed resource specifier", "", "/cpu/self")?;
                 Ok(Opt { ceed_resource })
             }
         }
