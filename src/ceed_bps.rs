@@ -32,7 +32,7 @@ impl std::str::FromStr for CeedBP {
 
 impl std::fmt::Display for CeedBP {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Ceed BP Option {}", self)
+        write!(f, "Ceed Benchmark Problem {}", self)
     }
 }
 
@@ -44,10 +44,8 @@ pub(crate) struct BPData {
     q_data_size: usize,
     setup_name: String,
     apply_name: String,
-    in_name: String,
-    in_mode: libceed::EvalMode,
-    out_name: String,
-    out_mode: libceed::EvalMode,
+    input_name: String,
+    output_name: String,
     q_mode: libceed::QuadMode,
     set_boundary_conditions: bool,
 }
@@ -59,10 +57,8 @@ pub(crate) fn get_bp_data(bp: CeedBP) -> crate::Result<BPData> {
             q_data_size: 1,
             setup_name: "Mass3DBuild".to_string(),
             apply_name: "MassApply".to_string(),
-            in_name: "u".to_string(),
-            in_mode: libceed::EvalMode::Interp,
-            out_name: "v".to_string(),
-            out_mode: libceed::EvalMode::Interp,
+            input_name: "u".to_string(),
+            output_name: "v".to_string(),
             q_mode: libceed::QuadMode::Gauss,
             set_boundary_conditions: false,
         }),
@@ -71,10 +67,8 @@ pub(crate) fn get_bp_data(bp: CeedBP) -> crate::Result<BPData> {
             q_data_size: 1,
             setup_name: "Mass3DBuild".to_string(),
             apply_name: "Vector3MassApply".to_string(),
-            in_name: "u".to_string(),
-            in_mode: libceed::EvalMode::Interp,
-            out_name: "v".to_string(),
-            out_mode: libceed::EvalMode::Interp,
+            input_name: "u".to_string(),
+            output_name: "v".to_string(),
             q_mode: libceed::QuadMode::Gauss,
             set_boundary_conditions: false,
         }),
@@ -83,10 +77,8 @@ pub(crate) fn get_bp_data(bp: CeedBP) -> crate::Result<BPData> {
             q_data_size: 6,
             setup_name: "Poisson3DBuild".to_string(),
             apply_name: "Poisson3DApply".to_string(),
-            in_name: "du".to_string(),
-            in_mode: libceed::EvalMode::Grad,
-            out_name: "dv".to_string(),
-            out_mode: libceed::EvalMode::Grad,
+            input_name: "du".to_string(),
+            output_name: "dv".to_string(),
             q_mode: libceed::QuadMode::Gauss,
             set_boundary_conditions: true,
         }),
@@ -95,10 +87,8 @@ pub(crate) fn get_bp_data(bp: CeedBP) -> crate::Result<BPData> {
             q_data_size: 6,
             setup_name: "Poisson3DBuild".to_string(),
             apply_name: "Vector3Poisson3DApply".to_string(),
-            in_name: "du".to_string(),
-            in_mode: libceed::EvalMode::Grad,
-            out_name: "dv".to_string(),
-            out_mode: libceed::EvalMode::Grad,
+            input_name: "du".to_string(),
+            output_name: "dv".to_string(),
             q_mode: libceed::QuadMode::Gauss,
             set_boundary_conditions: true,
         }),
@@ -107,10 +97,8 @@ pub(crate) fn get_bp_data(bp: CeedBP) -> crate::Result<BPData> {
             q_data_size: 6,
             setup_name: "Poisson3DBuild".to_string(),
             apply_name: "Poisson3DApply".to_string(),
-            in_name: "du".to_string(),
-            in_mode: libceed::EvalMode::Grad,
-            out_name: "dv".to_string(),
-            out_mode: libceed::EvalMode::Grad,
+            input_name: "du".to_string(),
+            output_name: "dv".to_string(),
             q_mode: libceed::QuadMode::GaussLobatto,
             set_boundary_conditions: true,
         }),
@@ -119,10 +107,8 @@ pub(crate) fn get_bp_data(bp: CeedBP) -> crate::Result<BPData> {
             q_data_size: 6,
             setup_name: "Poisson3DBuild".to_string(),
             apply_name: "Vector3Poisson3DApply".to_string(),
-            in_name: "du".to_string(),
-            in_mode: libceed::EvalMode::Grad,
-            out_name: "dv".to_string(),
-            out_mode: libceed::EvalMode::Grad,
+            input_name: "du".to_string(),
+            output_name: "dv".to_string(),
             q_mode: libceed::QuadMode::GaussLobatto,
             set_boundary_conditions: true,
         }),
@@ -175,10 +161,8 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
         q_data_size,
         setup_name,
         apply_name,
-        in_name,
-        in_mode,
-        out_name,
-        out_mode,
+        input_name,
+        output_name,
         q_mode,
         set_boundary_conditions,
     } = get_bp_data(problem)?;
@@ -271,9 +255,9 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
         meles
             .ceed
             .operator(&qf_apply, QFunctionOpt::None, QFunctionOpt::None)?
-            .field(&in_name, &restr_u, &basis_u, VectorOpt::Active)?
+            .field(&input_name, &restr_u, &basis_u, VectorOpt::Active)?
             .field("qdata", &restr_qdata, BasisOpt::Collocated, &qdata)?
-            .field(&out_name, &restr_u, &basis_u, VectorOpt::Active)?
+            .field(&output_name, &restr_u, &basis_u, VectorOpt::Active)?
             .check()?,
     );
 
