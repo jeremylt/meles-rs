@@ -21,13 +21,13 @@ pub(crate) fn apply_local_ceed_op<'a>(
     // Apply libCEED operator
     {
         let mut x_loc_view = x_loc.view()?;
-        let x_loc_borrow = x_loc_ceed
-            .set_borrowed_slice(&mut x_loc_view.as_slice().expect("failed to deref to slice"))
-            .expect("failed to set borrowed slice");
+        let x_loc_wrapper = x_loc_ceed
+            .wrap_slice_mut(&mut x_loc_view.as_slice().expect("failed to deref to slice"))
+            .expect("failed to wrap slice");
         let mut y_loc_view = y_loc.view_mut()?;
-        let y_loc_borrow = y_loc_ceed
-            .set_borrowed_slice(&mut y_loc_view.as_slice().expect("failed to deref to slice"))
-            .expect("failed to set borrowed slice");
+        let y_loc_wrapper = y_loc_ceed
+            .wrap_slice_mut(&mut y_loc_view.as_slice().expect("failed to deref to slice"))
+            .expect("failed to wrap slice");
 
         meles
             .ceed_op
@@ -56,9 +56,9 @@ pub(crate) fn get_diagonal_ceed<'a>(
     // Get libCEED operator diagonal
     {
         let mut x_loc_view = x_loc.view_mut()?;
-        let x_loc_borrow = x_loc_ceed
-            .set_borrowed_slice(&mut x_loc_view.as_slice().expect("failed to deref to slice"))
-            .expect("failed to set borrowed slice");
+        let x_loc_wrapper = x_loc_ceed
+            .wrap_slice_mut(&mut x_loc_view.as_slice().expect("failed to deref to slice"))
+            .expect("failed to wrap slice");
 
         meles
             .ceed_op
