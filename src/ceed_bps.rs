@@ -40,7 +40,7 @@ impl std::fmt::Display for CeedBP {
 // BPData struct for each problem
 // -----------------------------------------------------------------------------
 pub(crate) struct BPData {
-    num_comp: usize,
+    num_components: usize,
     q_data_size: usize,
     setup_name: String,
     apply_name: String,
@@ -53,7 +53,7 @@ pub(crate) struct BPData {
 pub(crate) fn get_bp_data(bp: CeedBP) -> crate::Result<BPData> {
     match bp {
         CeedBP::BP1 => Ok(BPData {
-            num_comp: 1,
+            num_components: 1,
             q_data_size: 1,
             setup_name: "Mass3DBuild".to_string(),
             apply_name: "MassApply".to_string(),
@@ -63,7 +63,7 @@ pub(crate) fn get_bp_data(bp: CeedBP) -> crate::Result<BPData> {
             set_boundary_conditions: false,
         }),
         CeedBP::BP2 => Ok(BPData {
-            num_comp: 3,
+            num_components: 3,
             q_data_size: 1,
             setup_name: "Mass3DBuild".to_string(),
             apply_name: "Vector3MassApply".to_string(),
@@ -73,7 +73,7 @@ pub(crate) fn get_bp_data(bp: CeedBP) -> crate::Result<BPData> {
             set_boundary_conditions: false,
         }),
         CeedBP::BP3 => Ok(BPData {
-            num_comp: 1,
+            num_components: 1,
             q_data_size: 6,
             setup_name: "Poisson3DBuild".to_string(),
             apply_name: "Poisson3DApply".to_string(),
@@ -83,7 +83,7 @@ pub(crate) fn get_bp_data(bp: CeedBP) -> crate::Result<BPData> {
             set_boundary_conditions: true,
         }),
         CeedBP::BP4 => Ok(BPData {
-            num_comp: 3,
+            num_components: 3,
             q_data_size: 6,
             setup_name: "Poisson3DBuild".to_string(),
             apply_name: "Vector3Poisson3DApply".to_string(),
@@ -93,7 +93,7 @@ pub(crate) fn get_bp_data(bp: CeedBP) -> crate::Result<BPData> {
             set_boundary_conditions: true,
         }),
         CeedBP::BP5 => Ok(BPData {
-            num_comp: 1,
+            num_components: 1,
             q_data_size: 6,
             setup_name: "Poisson3DBuild".to_string(),
             apply_name: "Poisson3DApply".to_string(),
@@ -103,7 +103,7 @@ pub(crate) fn get_bp_data(bp: CeedBP) -> crate::Result<BPData> {
             set_boundary_conditions: true,
         }),
         CeedBP::BP6 => Ok(BPData {
-            num_comp: 3,
+            num_components: 3,
             q_data_size: 6,
             setup_name: "Poisson3DBuild".to_string(),
             apply_name: "Vector3Poisson3DApply".to_string(),
@@ -157,7 +157,7 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
         faces,
     } = meles.petsc.options_get()?;
     let BPData {
-        num_comp,
+        num_components,
         q_data_size,
         setup_name,
         apply_name,
@@ -189,16 +189,35 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
     };
 
     // Set boundaries, order
-    let fe = petsc_rs::dm::FEDisc::create_lagrange(
+    let boundary_function_diff =
+        |dim: petsc_rs::PetscInt,
+         t: petsc_rs::PetscReal,
+         x: &[petsc_rs::PetscReal],
+         num_components: petsc_rs::PetscInt,
+         u: &mut [petsc_rs::PetscScalar]| {
+            let c = [0., 1., 2.];
+            let k = [1., 2., 3.];
+            for i in 0..num_components as usize {
+                u[i] = (std::f64::consts::PI * (c[0] + k[0] * x[0])).sin()
+                    * (std::f64::consts::PI * (c[1] + k[1] * x[1])).sin()
+                    * (std::f64::consts::PI * (c[2] + k[2] * x[2])).sin();
+            }
+            Ok(())
+        };
+    let user_boundary_function = if set_boundary_conditions {
+        Some(boundary_function_diff)
+    } else {
+        None
+    };
+    crate::dm::setup_dm_by_order(
         meles.petsc.world(),
+        mesh_dm,
+        order as i32,
+        num_components as i32,
         dim as i32,
-        num_comp as i32,
-        is_simplex,
-        p as i32,
-        q as i32,
+        set_boundary_conditions,
+        user_boundary_function,
     )?;
-    mesh_dm.add_field(None, fe)?;
-    mesh_dm.plex_set_closure_permutation_tensor_default(None)?;
 
     // Create work vectors
     meles.x_loc = RefCell::new(Some(mesh_dm.create_local_vector()?));
@@ -227,7 +246,7 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
         .basis_tensor_H1_Lagrange(dim, dim, 2, q, q_mode)?;
     let basis_u = meles
         .ceed
-        .basis_tensor_H1_Lagrange(dim, num_comp, p, q, q_mode)?;
+        .basis_tensor_H1_Lagrange(dim, num_components, p, q, q_mode)?;
     // -- QFunction
     let qf_setup = meles.ceed.q_function_interior_by_name(&setup_name)?;
     let qf_apply = meles.ceed.q_function_interior_by_name(&apply_name)?;
