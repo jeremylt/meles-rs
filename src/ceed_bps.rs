@@ -219,6 +219,8 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
     // -- Restrictions
     // -- Vector
     let mut qdata = meles.ceed.vector(1)?;
+    let mut coord_loc = meles.mesh_dm.borrow().unwrap().get_coordinates_local()?;
+    let mut coord_loc_ceed = meles.ceed.vector(coord_loc.get_local_size()? as usize)?;
     // -- Basis
     let basis_x = meles
         .ceed
@@ -226,30 +228,34 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
     let basis_u = meles
         .ceed
         .basis_tensor_H1_Lagrange(dim, num_comp, p, q, q_mode)?;
-    // -- Restriction
-
     // -- QFunction
     let qf_setup = meles.ceed.q_function_interior_by_name(&setup_name)?;
     let qf_apply = meles.ceed.q_function_interior_by_name(&apply_name)?;
     // -- Apply setup operator
-    meles
-        .ceed
-        .operator(&qf_setup, QFunctionOpt::None, QFunctionOpt::None)?
-        .field("dx", &restr_x, &basis_x, VectorOpt::Active)?
-        .field(
-            "weights",
-            ElemRestrictionOpt::None,
-            &basis_x,
-            VectorOpt::None,
-        )?
-        .field(
-            "qdata",
-            &restr_qdata,
-            BasisOpt::Collocated,
-            VectorOpt::Active,
-        )?
-        .check()?
-        .apply(&x, &mut qdata)?;
+    {
+        let mut coord_loc_view = coord_loc.view()?;
+        let coord_loc_wrapper = coord_loc_ceed
+            .wrap_slice_mut(&mut coord_loc_view.as_slice().expect("failed to deref to slice"))
+            .expect("failed to wrap slice");
+        meles
+            .ceed
+            .operator(&qf_setup, QFunctionOpt::None, QFunctionOpt::None)?
+            .field("dx", &restr_x, &basis_x, VectorOpt::Active)?
+            .field(
+                "weights",
+                ElemRestrictionOpt::None,
+                &basis_x,
+                VectorOpt::None,
+            )?
+            .field(
+                "qdata",
+                &restr_qdata,
+                BasisOpt::Collocated,
+                VectorOpt::Active,
+            )?
+            .check()?
+            .apply(&coord_loc_ceed, &mut qdata)?;
+    }
     // -- Operator
     meles.ceed_op = RefCell::new(Some(
         meles
