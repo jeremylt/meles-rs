@@ -212,9 +212,9 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
     crate::dm::setup_dm_by_order(
         meles.petsc.world(),
         mesh_dm,
-        order as i32,
-        num_components as i32,
-        dim as i32,
+        order as petsc_rs::PetscInt,
+        num_components as petsc_rs::PetscInt,
+        dim as petsc_rs::PetscInt,
         set_boundary_conditions,
         user_boundary_function,
     )?;
