@@ -21,7 +21,6 @@ pub mod prelude {
 // Modules
 // -----------------------------------------------------------------------------
 pub(crate) mod ceed_bps;
-pub(crate) mod dm;
 pub(crate) mod petsc_ops;
 
 // -----------------------------------------------------------------------------
@@ -73,12 +72,12 @@ pub struct Meles<'a> {
     pub(crate) petsc: &'a petsc_rs::Petsc,
     pub(crate) ceed: libceed::Ceed,
     pub(crate) method: crate::MethodType,
-    pub(crate) mesh_dm: RefCell<petsc_rs::dm::DM<'a, 'a>>,
-    pub(crate) x_loc: RefCell<petsc_rs::vector::Vector<'a>>,
-    pub(crate) y_loc: RefCell<petsc_rs::vector::Vector<'a>>,
-    pub(crate) x_loc_ceed: RefCell<Vector<'a>>,
-    pub(crate) y_loc_ceed: RefCell<Vector<'a>>,
-    pub(crate) ceed_op: RefCell<Operator<'a>>,
+    pub(crate) mesh_dm: RefCell<Option<petsc_rs::dm::DM<'a, 'a>>>,
+    pub(crate) x_loc: RefCell<Option<petsc_rs::vector::Vector<'a>>>,
+    pub(crate) y_loc: RefCell<Option<petsc_rs::vector::Vector<'a>>>,
+    pub(crate) x_loc_ceed: RefCell<Option<Vector<'a>>>,
+    pub(crate) y_loc_ceed: RefCell<Option<Vector<'a>>>,
+    pub(crate) ceed_op: RefCell<Option<Operator<'a>>>,
 }
 
 // -----------------------------------------------------------------------------
@@ -129,6 +128,12 @@ impl<'a> Meles<'a> {
             petsc: &petsc,
             ceed: libceed::Ceed::init(&ceed_resource),
             method: crate::MethodType::BenchmarkProblem,
+            mesh_dm: RefCell::new(None),
+            x_loc: RefCell::new(None),
+            y_loc: RefCell::new(None),
+            x_loc_ceed: RefCell::new(None),
+            y_loc_ceed: RefCell::new(None),
+            ceed_op: RefCell::new(None),
         })
     }
 
@@ -169,16 +174,24 @@ impl<'a> Meles<'a> {
     /// let petsc = petsc_rs::Petsc::init_no_args()?;
     /// let meles = meles::Meles::new(&petsc, "./examples/meles.yml")?;
     /// let dm = meles.dm(meles::MethodType::BenchmarkProblem)?;
-    /// let mat = meles.mat_shell_from_dm(dm)?;
+    /// let mat = meles.mat_shell_from_dm()?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn mat_shell_from_dm(
-        &self,
-        dm: petsc_rs::dm::DM<'a, 'a>,
-    ) -> Result<petsc_rs::mat::MatShell<'a, 'a, &'a crate::Meles>> {
+    pub fn mat_shell_from_dm(&self) -> Result<petsc_rs::mat::MatShell<'a, 'a, &'a crate::Meles>> {
+        // Check setup
+        assert!(
+            self.mesh_dm.borrow().is_some(),
+            "must create dm before setting up mat"
+        );
+
         // Create MatShell from DM
-        let mut mat = dm.create_matrix()?.into_shell(Box::new(self))?;
+        let mut mat = self
+            .mesh_dm
+            .borrow()
+            .unwrap()
+            .create_matrix()?
+            .into_shell(Box::new(self))?;
 
         // Set operations
         mat.shell_set_operation_mvv(MatOperation::MATOP_MULT, |m, x, y| {

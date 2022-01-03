@@ -201,19 +201,19 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
     mesh_dm.plex_set_closure_permutation_tensor_default(None)?;
 
     // Create work vectors
-    meles.x_loc = RefCell::new(mesh_dm.create_local_vector()?);
-    meles.y_loc = RefCell::new(mesh_dm.create_local_vector()?);
-    meles.x_loc_ceed = RefCell::new(
+    meles.x_loc = RefCell::new(Some(mesh_dm.create_local_vector()?));
+    meles.y_loc = RefCell::new(Some(mesh_dm.create_local_vector()?));
+    meles.x_loc_ceed = RefCell::new(Some(
         meles
             .ceed
-            .vector(meles.x_loc.borrow().get_local_size()? as usize)?,
-    );
-    meles.y_loc_ceed = RefCell::new(
+            .vector(meles.x_loc.borrow().unwrap().get_local_size()? as usize)?,
+    ));
+    meles.y_loc_ceed = RefCell::new(Some(
         meles
             .ceed
-            .vector(meles.x_loc.borrow().get_local_size()? as usize)?,
-    );
-    meles.mesh_dm = RefCell::new(mesh_dm);
+            .vector(meles.x_loc.borrow().unwrap().get_local_size()? as usize)?,
+    ));
+    meles.mesh_dm = RefCell::new(Some(mesh_dm));
 
     // Create libCEED operator
     // -- Restrictions
@@ -251,7 +251,7 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
         .check()?
         .apply(&x, &mut qdata)?;
     // -- Operator
-    meles.ceed_op = RefCell::new(
+    meles.ceed_op = RefCell::new(Some(
         meles
             .ceed
             .operator(&qf_apply, QFunctionOpt::None, QFunctionOpt::None)?
@@ -259,7 +259,7 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
             .field("qdata", &restr_qdata, BasisOpt::Collocated, &qdata)?
             .field(&output_name, &restr_u, &basis_u, VectorOpt::Active)?
             .check()?,
-    );
+    ));
 
     Ok(())
 }
