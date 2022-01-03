@@ -184,6 +184,10 @@ impl<'a> Meles<'a> {
             self.mesh_dm.borrow().is_some(),
             "must create dm before setting up mat"
         );
+        assert!(
+            self.method == crate::MethodType::BenchmarkProblem,
+            "only supported for BenchmarkProblems"
+        );
 
         // Create MatShell from DM
         let mut mat = self
