@@ -167,54 +167,53 @@ impl<'a> Meles<'a> {
 
         Ok(())
     }
-    /*
-        /// Return a PETSc MatShell for the DM that uses a libCEED operator
-        ///
-        /// # arguments
-        ///
-        /// * `dm` - DM for the MatShell
-        ///
-        /// ```
-        /// # use meles::prelude::*;
-        /// # use petsc_rs::prelude::*;
-        /// # fn main() -> meles::Result<()> {
-        /// let petsc = petsc_rs::Petsc::init_no_args()?;
-        /// let mut meles = meles::Meles::new(&petsc, "./examples/meles.yml")?;
-        /// let dm = meles.dm(meles::MethodType::BenchmarkProblem)?;
-        /// let mat = meles.mat_shell_from_dm()?;
-        /// # Ok(())
-        /// # }
-        /// ```
-        pub fn mat_shell_from_dm(&self) -> Result<petsc_rs::mat::MatShell<'a, 'a, &crate::Meles>> {
-            // Check setup
-            assert!(self.is_initalized, "must create dm before setting up mat");
-            assert!(
-                self.method == crate::MethodType::BenchmarkProblem,
-                "only supported for BenchmarkProblems"
-            );
 
-            // Create MatShell from DM
-            let mut mat = self
-                .mesh_dm
-                .borrow()
-                .create_matrix()?
-                .into_shell(Box::new(self))?;
+    /// Return a PETSc MatShell for the DM that uses a libCEED operator
+    ///
+    /// # arguments
+    ///
+    /// * `dm` - DM for the MatShell
+    ///
+    /// ```
+    /// # use meles::prelude::*;
+    /// # use petsc_rs::prelude::*;
+    /// # fn main() -> meles::Result<()> {
+    /// let petsc = petsc_rs::Petsc::init_no_args()?;
+    /// let mut meles = meles::Meles::new(&petsc, "./examples/meles.yml")?;
+    /// let dm = meles.dm(meles::MethodType::BenchmarkProblem)?;
+    /// let mat = meles.mat_shell_from_dm()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn mat_shell_from_dm(&self) -> Result<petsc_rs::mat::MatShell<'a, 'a, &crate::Meles>> {
+        // Check setup
+        assert!(self.is_initalized, "must create dm before setting up mat");
+        assert!(
+            self.method == crate::MethodType::BenchmarkProblem,
+            "only supported for BenchmarkProblems"
+        );
 
-            // Set operations
-            mat.shell_set_operation_mvv(MatOperation::MATOP_MULT, |m, x, y| {
-                let ctx = m.get_mat_data().unwrap();
-                crate::petsc_ops::apply_local_ceed_op(x, y, ctx)?;
-                Ok(())
-            })?;
-            mat.shell_set_operation_mv(MatOperation::MATOP_GET_DIAGONAL, |m, d| {
-                let ctx = m.get_mat_data().unwrap();
-                crate::petsc_ops::get_diagonal_ceed(d, ctx)?;
-                Ok(())
-            })?;
+        // Create MatShell from DM
+        let mut mat = self
+            .mesh_dm
+            .borrow()
+            .create_matrix()?
+            .into_shell(Box::new(self))?;
 
-            Ok(mat)
-        }
-    */
+        // Set operations
+        mat.shell_set_operation_mvv(MatOperation::MATOP_MULT, |m, x, y| {
+            let ctx = m.get_mat_data().unwrap();
+            crate::petsc_ops::apply_local_ceed_op(x, y, ctx)?;
+            Ok(())
+        })?;
+        mat.shell_set_operation_mv(MatOperation::MATOP_GET_DIAGONAL, |m, d| {
+            let ctx = m.get_mat_data().unwrap();
+            crate::petsc_ops::get_diagonal_ceed(d, ctx)?;
+            Ok(())
+        })?;
+
+        Ok(mat)
+    }
 }
 
 // -----------------------------------------------------------------------------
