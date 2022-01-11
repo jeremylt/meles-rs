@@ -15,35 +15,36 @@ pub(crate) fn apply_local_ceed_op<'a>(
     let mut y_loc_ceed = meles.y_loc_ceed.borrow_mut().unwrap();
     // Global to local
     meles.mesh_dm.borrow().unwrap().global_to_local(
-        &x,
+        x,
         petsc_rs::InsertMode::INSERT_VALUES,
         &mut x_loc,
     )?;
     // Apply libCEED operator
     {
         let mut x_loc_view = x_loc.view()?;
-        let x_loc_wrapper = x_loc_ceed
+        let _x_loc_wrapper = x_loc_ceed
             .wrap_slice_mut(&mut x_loc_view.as_slice().expect("failed to deref to slice"))
             .expect("failed to wrap slice");
         let mut y_loc_view = y_loc.view_mut()?;
-        let y_loc_wrapper = y_loc_ceed
+        let _y_loc_wrapper = y_loc_ceed
             .wrap_slice_mut(&mut y_loc_view.as_slice().expect("failed to deref to slice"))
             .expect("failed to wrap slice");
 
         meles
             .ceed_op
             .borrow()
+            .as_ref()
             .unwrap()
             .apply(&x_loc_ceed, &mut y_loc_ceed)
             .expect("failed to apply libCEED operator");
     }
     // Local to global
     y.zero_entries()?;
-    meles.mesh_dm.borrow().unwrap().local_to_global(
-        &y_loc,
-        petsc_rs::InsertMode::ADD_VALUES,
-        &mut y,
-    )?;
+    meles
+        .mesh_dm
+        .borrow()
+        .unwrap()
+        .local_to_global(&y_loc, petsc_rs::InsertMode::ADD_VALUES, y)?;
     Ok(())
 }
 
@@ -59,24 +60,25 @@ pub(crate) fn get_diagonal_ceed<'a>(
     // Get libCEED operator diagonal
     {
         let mut x_loc_view = x_loc.view_mut()?;
-        let x_loc_wrapper = x_loc_ceed
+        let _x_loc_wrapper = x_loc_ceed
             .wrap_slice_mut(&mut x_loc_view.as_slice().expect("failed to deref to slice"))
             .expect("failed to wrap slice");
 
         meles
             .ceed_op
             .borrow()
+            .as_ref()
             .unwrap()
             .linear_assemble_diagonal(&mut x_loc_ceed)
             .expect("failed to compute diagonal of libCEED operator");
     }
     // Local to global
     d.zero_entries()?;
-    meles.mesh_dm.borrow().unwrap().local_to_global(
-        &x_loc,
-        petsc_rs::InsertMode::ADD_VALUES,
-        &mut d,
-    )?;
+    meles
+        .mesh_dm
+        .borrow()
+        .unwrap()
+        .local_to_global(&x_loc, petsc_rs::InsertMode::ADD_VALUES, d)?;
     Ok(())
 }
 // -----------------------------------------------------------------------------

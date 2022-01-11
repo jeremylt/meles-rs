@@ -118,14 +118,14 @@ pub(crate) fn get_bp_data(bp: CeedBP) -> crate::Result<BPData> {
 // -----------------------------------------------------------------------------
 // Setup dm and libCEED operator
 // -----------------------------------------------------------------------------
-pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
+pub(crate) fn create_dm<'a>(meles: &'a mut crate::Meles<'a>) -> crate::Result<()> {
     // Get command line options
     struct Opt {
         mesh_file: String,
         problem: CeedBP,
-        order: petsc_rs::PetscInt,
-        q_extra: petsc_rs::PetscInt,
-        faces: (petsc_rs::PetscInt, petsc_rs::PetscInt, petsc_rs::PetscInt),
+        order: petsc_rs::Int,
+        q_extra: petsc_rs::Int,
+        faces: (petsc_rs::Int, petsc_rs::Int, petsc_rs::Int),
     }
     impl PetscOpt for Opt {
         fn from_petsc_opt_builder(pob: &mut PetscOptBuilder) -> petsc_rs::Result<Self> {
@@ -189,21 +189,20 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
     };
 
     // Set boundaries, order
-    let boundary_function_diff =
-        |dim: petsc_rs::PetscInt,
-         t: petsc_rs::PetscReal,
-         x: &[petsc_rs::PetscReal],
-         num_components: petsc_rs::PetscInt,
-         u: &mut [petsc_rs::PetscScalar]| {
-            let c = [0., 1., 2.];
-            let k = [1., 2., 3.];
-            for i in 0..num_components as usize {
-                u[i] = (std::f64::consts::PI * (c[0] + k[0] * x[0])).sin()
-                    * (std::f64::consts::PI * (c[1] + k[1] * x[1])).sin()
-                    * (std::f64::consts::PI * (c[2] + k[2] * x[2])).sin();
-            }
-            Ok(())
-        };
+    let boundary_function_diff = |_dim: petsc_rs::Int,
+                                  _t: petsc_rs::Real,
+                                  x: &[petsc_rs::Real],
+                                  num_components: petsc_rs::Int,
+                                  u: &mut [petsc_rs::Scalar]| {
+        let c = [0., 1., 2.];
+        let k = [1., 2., 3.];
+        for i in 0..num_components as usize {
+            u[i] = (std::f64::consts::PI * (c[0] + k[0] * x[0])).sin()
+                * (std::f64::consts::PI * (c[1] + k[1] * x[1])).sin()
+                * (std::f64::consts::PI * (c[2] + k[2] * x[2])).sin();
+        }
+        Ok(())
+    };
     let user_boundary_function = if set_boundary_conditions {
         Some(boundary_function_diff)
     } else {
@@ -212,34 +211,25 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
     crate::dm::setup_dm_by_order(
         meles.petsc.world(),
         mesh_dm,
-        order as petsc_rs::PetscInt,
-        num_components as petsc_rs::PetscInt,
-        dim as petsc_rs::PetscInt,
+        order as petsc_rs::Int,
+        num_components as petsc_rs::Int,
+        dim as petsc_rs::Int,
         set_boundary_conditions,
         user_boundary_function,
     )?;
 
     // Create work vectors
-    meles.x_loc = RefCell::new(Some(mesh_dm.create_local_vector()?));
-    meles.y_loc = RefCell::new(Some(mesh_dm.create_local_vector()?));
-    meles.x_loc_ceed = RefCell::new(Some(
-        meles
-            .ceed
-            .vector(meles.x_loc.borrow().unwrap().get_local_size()? as usize)?,
-    ));
-    meles.y_loc_ceed = RefCell::new(Some(
-        meles
-            .ceed
-            .vector(meles.x_loc.borrow().unwrap().get_local_size()? as usize)?,
-    ));
-    meles.mesh_dm = RefCell::new(Some(mesh_dm));
+    meles.x_loc.replace(Some(mesh_dm.create_local_vector()?));
+    meles.y_loc.replace(Some(mesh_dm.create_local_vector()?));
+    let x_loc_size = meles.x_loc.borrow().as_ref().unwrap().get_local_size()? as usize;
+    meles
+        .x_loc_ceed
+        .replace(Some(meles.ceed.vector(x_loc_size)?));
+    meles
+        .y_loc_ceed
+        .replace(Some(meles.ceed.vector(x_loc_size)?));
 
     // Create libCEED operator
-    // -- Restrictions
-    // -- Vector
-    let mut qdata = meles.ceed.vector(1)?;
-    let mut coord_loc = meles.mesh_dm.borrow().unwrap().get_coordinates_local()?;
-    let mut coord_loc_ceed = meles.ceed.vector(coord_loc.get_local_size()? as usize)?;
     // -- Basis
     let basis_x = meles
         .ceed
@@ -247,13 +237,35 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
     let basis_u = meles
         .ceed
         .basis_tensor_H1_Lagrange(dim, num_components, p, q, q_mode)?;
+    // -- Restrictions
+    let restr_u =
+        { crate::dm::create_restriction_from_dm_plex(&mut mesh_dm, &meles.ceed, 0, None, 0)? };
+    let restr_x = {
+        let mesh_coord_dm = mesh_dm.get_coordinate_dm_or_create()?;
+        crate::dm::create_restriction_from_dm_plex(&mesh_coord_dm, &meles.ceed, 0, None, 0)?
+    };
+    let restr_qdata = {
+        let num_elements = restr_u.num_elements();
+        let num_quadrature_points = basis_u.num_quadrature_points();
+        meles.ceed.strided_elem_restriction(
+            num_elements,
+            num_quadrature_points,
+            q_data_size,
+            num_elements * num_quadrature_points * q_data_size,
+            CEED_STRIDES_BACKEND,
+        )?
+    };
+    // -- Vector
+    let mut qdata = restr_qdata.create_lvector()?;
+    let coord_loc = mesh_dm.get_coordinates_local()?;
+    let mut coord_loc_ceed = meles.ceed.vector(coord_loc.get_local_size()? as usize)?;
     // -- QFunction
     let qf_setup = meles.ceed.q_function_interior_by_name(&setup_name)?;
     let qf_apply = meles.ceed.q_function_interior_by_name(&apply_name)?;
     // -- Apply setup operator
     {
-        let mut coord_loc_view = coord_loc.view()?;
-        let coord_loc_wrapper = coord_loc_ceed
+        let coord_loc_view = coord_loc.view()?;
+        let _coord_loc_wrapper = coord_loc_ceed
             .wrap_slice_mut(&mut coord_loc_view.as_slice().expect("failed to deref to slice"))
             .expect("failed to wrap slice");
         meles
@@ -276,7 +288,7 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
             .apply(&coord_loc_ceed, &mut qdata)?;
     }
     // -- Operator
-    meles.ceed_op = RefCell::new(Some(
+    meles.ceed_op.replace(Some(
         meles
             .ceed
             .operator(&qf_apply, QFunctionOpt::None, QFunctionOpt::None)?
@@ -286,6 +298,10 @@ pub(crate) fn create_dm(meles: crate::Meles) -> crate::Result<()> {
             .check()?,
     ));
 
+    // Update mesh DM
+    meles.mesh_dm.replace(Some(mesh_dm));
+
     Ok(())
 }
+
 // -----------------------------------------------------------------------------

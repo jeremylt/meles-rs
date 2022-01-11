@@ -7,14 +7,12 @@
 use crate::prelude::*;
 
 pub mod prelude {
-    pub(crate) use crate::dm;
     pub use crate::{Meles, MethodType};
-    pub(crate) use libceed::{prelude::*, Ceed};
+    pub(crate) use libceed::prelude::*;
     pub(crate) use mpi;
     pub(crate) use petsc_rs::prelude::*;
     pub(crate) use std::cell::RefCell;
     pub(crate) use std::fmt;
-    pub(crate) use std::mem;
 }
 
 // -----------------------------------------------------------------------------
@@ -48,8 +46,8 @@ impl From<libceed::Error> for Error {
     }
 }
 
-impl From<petsc_rs::PetscError> for Error {
-    fn from(petsc_error: petsc_rs::PetscError) -> Self {
+impl From<petsc_rs::Error> for Error {
+    fn from(petsc_error: petsc_rs::Error) -> Self {
         Self {
             message: petsc_error.to_string(),
         }
@@ -154,7 +152,7 @@ impl<'a> Meles<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn dm(mut self, method: crate::MethodType) -> Result<()> {
+    pub fn dm(&'a mut self, method: crate::MethodType) -> Result<()> {
         self.method = method;
         match self.method {
             crate::MethodType::BenchmarkProblem => crate::ceed_bps::create_dm(self),
@@ -194,6 +192,7 @@ impl<'a> Meles<'a> {
         let mut mat = self
             .mesh_dm
             .borrow()
+            .as_ref()
             .unwrap()
             .create_matrix()?
             .into_shell(Box::new(self))?;

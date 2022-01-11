@@ -7,11 +7,11 @@ use crate::prelude::*;
 // -----------------------------------------------------------------------------
 pub(crate) fn kershaw_transformation<'a>(
     mut dm: petsc_rs::dm::DM<'a, 'a>,
-    eps: PetscScalar,
+    eps: petsc_rs::Scalar,
 ) -> crate::Result<()> {
     // Transition from a value of "a" for x=0, to a value of "b" for x=1.  Optionally
     // smooth -- see the commented versions at the end.
-    fn step(a: PetscScalar, b: PetscScalar, x: PetscScalar) -> PetscScalar {
+    fn step(a: petsc_rs::Scalar, b: petsc_rs::Scalar, x: petsc_rs::Scalar) -> petsc_rs::Scalar {
         if x <= 0. {
             a
         } else if x >= 1. {
@@ -22,7 +22,7 @@ pub(crate) fn kershaw_transformation<'a>(
     }
 
     // 1D transformation at the right boundary
-    fn right(eps: PetscScalar, x: PetscScalar) -> PetscScalar {
+    fn right(eps: petsc_rs::Scalar, x: petsc_rs::Scalar) -> petsc_rs::Scalar {
         if x <= 0.5 {
             (2. - eps) * x
         } else {
@@ -31,7 +31,7 @@ pub(crate) fn kershaw_transformation<'a>(
     }
 
     // 1D transformation at the left boundary
-    fn left(eps: PetscScalar, x: PetscScalar) -> PetscScalar {
+    fn left(eps: petsc_rs::Scalar, x: petsc_rs::Scalar) -> petsc_rs::Scalar {
         1. - right(eps, 1. - x)
     }
 
@@ -78,19 +78,19 @@ pub(crate) fn kershaw_transformation<'a>(
 pub(crate) fn setup_dm_by_order<'a, BcFn>(
     comm: &'a mpi::topology::UserCommunicator,
     mut dm: petsc_rs::dm::DM<'a, 'a>,
-    order: petsc_rs::PetscInt,
-    num_components: petsc_rs::PetscInt,
-    dimemsion: petsc_rs::PetscInt,
+    order: petsc_rs::Int,
+    num_components: petsc_rs::Int,
+    dimemsion: petsc_rs::Int,
     enforce_boundary_conditions: bool,
     user_boundary_function: Option<BcFn>,
 ) -> crate::Result<()>
 where
     BcFn: Fn(
-            petsc_rs::PetscInt,
-            petsc_rs::PetscReal,
-            &[petsc_rs::PetscReal],
-            petsc_rs::PetscInt,
-            &mut [petsc_rs::PetscScalar],
+            petsc_rs::Int,
+            petsc_rs::Real,
+            &[petsc_rs::Real],
+            petsc_rs::Int,
+            &mut [petsc_rs::Scalar],
         ) -> petsc_rs::Result<()>
         + 'a,
 {
@@ -104,6 +104,11 @@ where
         None,
     )?;
     dm.add_field(None, fe)?;
+
+    // Coordinate FE
+    let fe_coords =
+        petsc_rs::dm::FEDisc::create_lagrange(&comm, dimemsion, num_components, false, 1, None)?;
+    dm.project_coordinates(fe_coords)?;
 
     // Setup DM
     let _ = dm.create_ds()?;
@@ -132,25 +137,30 @@ where
 // -----------------------------------------------------------------------------
 // Setup Restriction from DMPlex
 // -----------------------------------------------------------------------------
-pub(crate) fn create_restriction_from_dm_plex(
-    dm: petsc_rs::dm::DM,
-    ceed: libceed::Ceed,
-    p: petsc_rs::PetscInt,
-    topological_dimension: petsc_rs::PetscInt,
-    height: petsc_rs::PetscInt,
-    label: petsc_rs::dm::DMLabel,
-    value: petsc_rs::PetscInt,
-) -> crate::Result<()> {
-    /// Involute index - essential BC DoFs are encoded in closure incides as -(i+1)
-    fn involute(i: PetscInt) -> PetscInt {
-        if i >= 0 {
-            i
-        } else {
-            -(i + 1)
-        }
-    }
-
-    Ok(())
+pub(crate) fn create_restriction_from_dm_plex<'a, 'b>(
+    dm: &'b petsc_rs::dm::DM<'b, '_>,
+    ceed: &'a libceed::Ceed,
+    height: petsc_rs::Int,
+    label: impl Into<Option<&'b petsc_rs::dm::DMLabel<'b>>>,
+    value: petsc_rs::Int,
+) -> crate::Result<ElemRestriction<'a>> {
+    let petsc_rs::dm::DMPlexLocalOffsets {
+        num_cells,
+        cell_size,
+        num_components,
+        l_size,
+        offsets,
+    } = dm.plex_get_local_offsets(label, value, height, 0)?;
+    let elem_restriction = ceed.elem_restriction(
+        num_cells as usize,
+        cell_size as usize,
+        num_components as usize,
+        1,
+        l_size as usize,
+        MemType::Host,
+        &offsets,
+    )?;
+    Ok(elem_restriction)
 }
 
 // -----------------------------------------------------------------------------
