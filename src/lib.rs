@@ -70,9 +70,8 @@ pub enum MethodType {
 pub struct Meles<'a> {
     pub(crate) petsc: &'a petsc_rs::Petsc,
     pub(crate) ceed: libceed::Ceed,
-    pub(crate) is_initalized: bool,
     pub(crate) method: crate::MethodType,
-    pub(crate) mesh_dm: RefCell<petsc_rs::dm::DM<'a, 'a>>,
+    pub dm: RefCell<petsc_rs::dm::DM<'a, 'a>>,
     pub(crate) x_loc: RefCell<petsc_rs::vector::Vector<'a>>,
     pub(crate) y_loc: RefCell<petsc_rs::vector::Vector<'a>>,
     pub(crate) x_loc_ceed: RefCell<Vector<'a>>,
@@ -94,18 +93,34 @@ impl<'a> Meles<'a> {
     ///
     /// # arguments
     ///
+    /// * `petsc` - PETSc context to use
     /// * `yml` - Filepath to specification yml
+    /// * `method` - Type of meles problem to setup
     ///
     /// ```
     /// # use meles::prelude::*;
     /// # use petsc_rs::prelude::*;
     /// # fn main() -> meles::Result<()> {
     /// let petsc = petsc_rs::Petsc::init_no_args()?;
-    /// let meles = meles::Meles::new(&petsc, "./examples/meles.yml")?;
+    /// let mut meles = meles::Meles::new(
+    ///     &petsc,
+    ///     "./examples/meles.yml",
+    ///     meles::MethodType::BenchmarkProblem,
+    /// )?;
+    ///
+    /// // mesh DM can be borrowed immutably
+    /// let vec = { meles.dm.borrow().create_global_vector()? };
+    ///
+    /// // or mutably
+    /// let dm = meles.dm.borrow_mut();
     /// # Ok(())
     /// # }
     /// ```
-    pub fn new(petsc: &'a petsc_rs::Petsc, yml: impl Into<String> + Clone) -> Result<Self> {
+    pub fn new(
+        petsc: &'a petsc_rs::Petsc,
+        yml: impl Into<String> + Clone,
+        method: crate::MethodType,
+    ) -> Result<Self> {
         // Insert yaml into options database
         let yml = yml.into().clone();
         petsc.options_insert_file(&yml)?;
@@ -123,71 +138,58 @@ impl<'a> Meles<'a> {
         }
         let Opt { ceed_resource } = petsc.options_get()?;
 
-        // Return self
+        // Initial setup
         let ceed = libceed::Ceed::init(&ceed_resource);
         let x_loc_ceed = ceed.vector(1)?;
         let y_loc_ceed = ceed.vector(1)?;
         let op_ceed = ceed.composite_operator()?;
-        Ok(Self {
+        let mut meles = Self {
             petsc: &petsc,
             ceed: ceed,
-            is_initalized: false,
             method: crate::MethodType::BenchmarkProblem,
-            mesh_dm: RefCell::new(petsc_rs::dm::DM::plex_create(petsc.world())?),
+            dm: RefCell::new(petsc_rs::dm::DM::plex_create(petsc.world())?),
             x_loc: RefCell::new(petsc_rs::vector::Vector::create(petsc.world())?),
             y_loc: RefCell::new(petsc_rs::vector::Vector::create(petsc.world())?),
             x_loc_ceed: RefCell::new(x_loc_ceed),
             y_loc_ceed: RefCell::new(y_loc_ceed),
             op_ceed: RefCell::new(op_ceed),
-        })
-    }
+        };
 
-    /// Returns a PETSc DM initialized with the specified yml filepath
-    ///
-    /// # arguments
-    ///
-    /// * `method` - Filepath to specification yml
-    ///
-    /// ```
-    /// # use meles::prelude::*;
-    /// # use petsc_rs::prelude::*;
-    /// # fn main() -> meles::Result<()> {
-    /// let petsc = petsc_rs::Petsc::init_no_args()?;
-    /// let mut meles = meles::Meles::new(&petsc, "./examples/meles.yml")?;
-    /// let dm = meles.dm(meles::MethodType::BenchmarkProblem)?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn dm(&mut self, method: crate::MethodType) -> Result<()> {
-        self.method = method;
-        match self.method {
-            crate::MethodType::BenchmarkProblem => crate::ceed_bps::create_dm(self)?,
+        // Create DM
+        meles.method = method;
+        match method {
+            crate::MethodType::BenchmarkProblem => crate::ceed_bps::create_dm(&mut meles)?,
             // TODO: Ratel methods
         }
 
-        Ok(())
+        // Return self
+        Ok(meles)
     }
 
     /// Return a PETSc MatShell for the DM that uses a libCEED operator
     ///
-    /// # arguments
-    ///
-    /// * `dm` - DM for the MatShell
+    /// Note: Can only directly create a MatShell for `BenchmarkProblem`s
     ///
     /// ```
     /// # use meles::prelude::*;
     /// # use petsc_rs::prelude::*;
     /// # fn main() -> meles::Result<()> {
     /// let petsc = petsc_rs::Petsc::init_no_args()?;
-    /// let mut meles = meles::Meles::new(&petsc, "./examples/meles.yml")?;
-    /// let dm = meles.dm(meles::MethodType::BenchmarkProblem)?;
+    /// let meles = meles::Meles::new(
+    ///     &petsc,
+    ///     "./examples/meles.yml",
+    ///     meles::MethodType::BenchmarkProblem,
+    /// )?;
+    ///
+    /// # create matshell
     /// let mat = meles.mat_shell_from_dm()?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn mat_shell_from_dm(&self) -> Result<petsc_rs::mat::MatShell<'a, 'a, &crate::Meles>> {
+    pub fn mat_shell_from_dm(
+        &'a self,
+    ) -> Result<petsc_rs::mat::MatShell<'a, 'a, &'a crate::Meles>> {
         // Check setup
-        assert!(self.is_initalized, "must create dm before setting up mat");
         assert!(
             self.method == crate::MethodType::BenchmarkProblem,
             "only supported for BenchmarkProblems"
@@ -195,7 +197,7 @@ impl<'a> Meles<'a> {
 
         // Create MatShell from DM
         let mut mat = self
-            .mesh_dm
+            .dm
             .borrow()
             .create_matrix()?
             .into_shell(Box::new(self))?;

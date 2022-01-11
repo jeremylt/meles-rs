@@ -15,7 +15,7 @@ pub(crate) fn apply_local_ceed_op<'a>(
     let mut y_loc_ceed = meles.y_loc_ceed.borrow_mut();
     // Global to local
     meles
-        .mesh_dm
+        .dm
         .borrow()
         .global_to_local(x, petsc_rs::InsertMode::INSERT_VALUES, &mut x_loc)?;
     // Apply libCEED operator
@@ -40,7 +40,7 @@ pub(crate) fn apply_local_ceed_op<'a>(
     // Local to global
     y.zero_entries()?;
     meles
-        .mesh_dm
+        .dm
         .borrow()
         .local_to_global(&y_loc, petsc_rs::InsertMode::ADD_VALUES, y)?;
     Ok(())
@@ -72,7 +72,7 @@ pub(crate) fn get_diagonal_ceed<'a>(
     // Local to global
     d.zero_entries()?;
     meles
-        .mesh_dm
+        .dm
         .borrow()
         .local_to_global(&x_loc, petsc_rs::InsertMode::ADD_VALUES, d)?;
     Ok(())

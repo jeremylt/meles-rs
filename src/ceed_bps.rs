@@ -173,7 +173,7 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
     let q: usize = p + q_extra as usize;
     let is_simplex = false;
     let interpolate = true;
-    let mesh_dm = if mesh_file != "" {
+    let dm = if mesh_file != "" {
         petsc_rs::dm::DM::plex_create_from_file(meles.petsc.world(), mesh_file, interpolate)?
     } else {
         petsc_rs::dm::DM::plex_create_box_mesh(
@@ -189,7 +189,7 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
     };
 
     // Update mesh DM
-    meles.mesh_dm.replace(mesh_dm);
+    meles.dm.replace(dm);
 
     // Set boundaries, order
     let boundary_function_diff = |_dim: petsc_rs::Int,
@@ -213,7 +213,7 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
     };
     crate::dm::setup_dm_by_order(
         meles.petsc.world(),
-        &mut meles.mesh_dm.borrow_mut(),
+        &mut meles.dm.borrow_mut(),
         order as petsc_rs::Int,
         num_components as petsc_rs::Int,
         dim as petsc_rs::Int,
@@ -224,10 +224,10 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
     // Create work vectors
     meles
         .x_loc
-        .replace(meles.mesh_dm.borrow().create_local_vector()?);
+        .replace(meles.dm.borrow().create_local_vector()?);
     meles
         .y_loc
-        .replace(meles.mesh_dm.borrow().create_local_vector()?);
+        .replace(meles.dm.borrow().create_local_vector()?);
     let x_loc_size = meles.x_loc.borrow().get_local_size()? as usize;
     meles.x_loc_ceed.replace(meles.ceed.vector(x_loc_size)?);
     meles.y_loc_ceed.replace(meles.ceed.vector(x_loc_size)?);
@@ -242,11 +242,11 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
         .basis_tensor_H1_Lagrange(dim, num_components, p, q, q_mode)?;
     // -- Restrictions
     let restr_u = {
-        let mut mesh_dm = meles.mesh_dm.borrow_mut();
-        crate::dm::create_restriction_from_dm_plex(&mut mesh_dm, &meles.ceed, 0, None, 0)?
+        let dm = meles.dm.borrow_mut();
+        crate::dm::create_restriction_from_dm_plex(&dm, &meles.ceed, 0, None, 0)?
     };
     let restr_x = {
-        let mesh_coord_dm = meles.mesh_dm.borrow_mut().get_coordinate_dm_or_create()?;
+        let mesh_coord_dm = meles.dm.borrow_mut().get_coordinate_dm_or_create()?;
         crate::dm::create_restriction_from_dm_plex(&mesh_coord_dm, &meles.ceed, 0, None, 0)?
     };
     let restr_qdata = {
@@ -263,8 +263,8 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
     // -- Vector
     let mut qdata = restr_qdata.create_lvector()?;
     let mut coord_loc = {
-        let mut mesh_dm = meles.mesh_dm.borrow_mut();
-        mesh_dm.get_coordinates_local()?
+        let mut dm = meles.dm.borrow_mut();
+        dm.get_coordinates_local()?
     };
     let mut coord_loc_ceed = meles.ceed.vector(coord_loc.get_local_size()? as usize)?;
     // -- QFunction
@@ -309,8 +309,6 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
             .check()?,
     )?;
     meles.op_ceed.replace(op_ceed);
-
-    meles.is_initalized = true;
 
     Ok(())
 }
