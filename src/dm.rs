@@ -77,7 +77,7 @@ pub(crate) fn kershaw_transformation<'a>(
 // -----------------------------------------------------------------------------
 pub(crate) fn setup_dm_by_order<'a, BcFn>(
     comm: &'a mpi::topology::UserCommunicator,
-    &mut dm: &mut petsc_rs::dm::DM<'a, 'a>,
+    dm: &mut petsc_rs::dm::DM<'a, 'a>,
     order: petsc_rs::Int,
     num_components: petsc_rs::Int,
     dimemsion: petsc_rs::Int,
@@ -107,7 +107,7 @@ where
 
     // Coordinate FE
     let fe_coords =
-        petsc_rs::dm::FEDisc::create_lagrange(&comm, dimemsion, num_components, false, 1, None)?;
+        petsc_rs::dm::FEDisc::create_lagrange(&comm, dimemsion, dimemsion, false, 1, None)?;
     dm.project_coordinates(fe_coords)?;
 
     // Setup DM
@@ -137,13 +137,13 @@ where
 // -----------------------------------------------------------------------------
 // Setup Restriction from DMPlex
 // -----------------------------------------------------------------------------
-pub(crate) fn create_restriction_from_dm_plex<'a, 'b>(
-    dm: &'b petsc_rs::dm::DM<'b, '_>,
-    ceed: &'a libceed::Ceed,
+pub(crate) fn create_restriction_from_dm_plex<'a, 'b, 'c>(
+    dm: &'a petsc_rs::dm::DM<'b, '_>,
+    ceed: &libceed::Ceed,
     height: petsc_rs::Int,
     label: impl Into<Option<&'b petsc_rs::dm::DMLabel<'b>>>,
     value: petsc_rs::Int,
-) -> crate::Result<ElemRestriction<'a>> {
+) -> crate::Result<ElemRestriction<'c>> {
     let petsc_rs::dm::DMPlexLocalOffsets {
         num_cells,
         cell_size,
