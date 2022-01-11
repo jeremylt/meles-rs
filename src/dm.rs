@@ -77,7 +77,7 @@ pub(crate) fn kershaw_transformation<'a>(
 // -----------------------------------------------------------------------------
 pub(crate) fn setup_dm_by_order<'a, BcFn>(
     comm: &'a mpi::topology::UserCommunicator,
-    mut dm: petsc_rs::dm::DM<'a, 'a>,
+    &mut dm: &mut petsc_rs::dm::DM<'a, 'a>,
     order: petsc_rs::Int,
     num_components: petsc_rs::Int,
     dimemsion: petsc_rs::Int,
