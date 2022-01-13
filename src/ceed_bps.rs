@@ -50,7 +50,7 @@ pub(crate) struct BPData {
     set_boundary_conditions: bool,
 }
 
-pub(crate) fn get_bp_data(bp: CeedBP) -> crate::Result<BPData> {
+pub(crate) fn bp_data(bp: CeedBP) -> crate::Result<BPData> {
     match bp {
         CeedBP::BP1 => Ok(BPData {
             num_components: 1,
@@ -123,12 +123,12 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
     struct Opt {
         mesh_file: String,
         problem: CeedBP,
-        order: petsc_rs::Int,
-        q_extra: petsc_rs::Int,
-        faces: (petsc_rs::Int, petsc_rs::Int, petsc_rs::Int),
+        order: usize,
+        q_extra: usize,
+        faces: (usize, usize, usize),
     }
-    impl PetscOpt for Opt {
-        fn from_petsc_opt_builder(pob: &mut PetscOptBuilder) -> petsc_rs::Result<Self> {
+    impl petsc::Opt for Opt {
+        fn from_opt_builder(pob: &mut petsc::OptBuilder) -> petsc::Result<Self> {
             let mesh_file = pob.options_string("-mesh", "Read mesh from file", "", "")?;
             let problem = pob.options_from_string(
                 "-problem",
@@ -137,8 +137,9 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
                 CeedBP::BP1,
             )?;
             let order =
-                pob.options_int("-order", "Polynomial order of tensor product basis", "", 3)?;
-            let q_extra = pob.options_int("-qextra", "Number of extra quadrature points", "", 1)?;
+                pob.options_usize("-order", "Polynomial order of tensor product basis", "", 3)?;
+            let q_extra =
+                pob.options_usize("-qextra", "Number of extra quadrature points", "", 1)?;
             let faces = (3, 3, 3);
             Ok(Opt {
                 mesh_file,
@@ -155,7 +156,7 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
         order,
         q_extra,
         faces,
-    } = meles.petsc.options_get()?;
+    } = meles.petsc.options()?;
     let BPData {
         num_components,
         q_data_size,
@@ -165,20 +166,20 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
         output_name,
         q_mode,
         set_boundary_conditions,
-    } = get_bp_data(problem)?;
+    } = bp_data(problem)?;
 
     // Create DM
-    let dim: usize = 3;
-    let p: usize = order as usize + 1;
-    let q: usize = p + q_extra as usize;
+    let dim = 3;
+    let p = order + 1;
+    let q = p + q_extra;
     let is_simplex = false;
     let interpolate = true;
     let dm = if mesh_file != "" {
-        petsc_rs::dm::DM::plex_create_from_file(meles.petsc.world(), mesh_file, interpolate)?
+        DM::plex_create_from_file(meles.petsc.world(), mesh_file, interpolate)?
     } else {
-        petsc_rs::dm::DM::plex_create_box_mesh(
+        DM::plex_create_box_mesh(
             meles.petsc.world(),
-            dim as i32,
+            dim,
             is_simplex,
             faces,
             None,
@@ -192,11 +193,11 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
     meles.dm.replace(dm);
 
     // Set boundaries, order
-    let boundary_function_diff = |_dim: petsc_rs::Int,
-                                  _t: petsc_rs::Real,
-                                  x: &[petsc_rs::Real],
-                                  num_components: petsc_rs::Int,
-                                  u: &mut [petsc_rs::Scalar]| {
+    let boundary_function_diff = |_dim: petsc::Int,
+                                  _t: Real,
+                                  x: &[Real],
+                                  num_components: petsc::Int,
+                                  u: &mut [petsc::Scalar]| {
         let c = [0., 1., 2.];
         let k = [1., 2., 3.];
         for i in 0..num_components as usize {
@@ -214,9 +215,9 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
     crate::dm::setup_dm_by_order(
         meles.petsc.world(),
         &mut meles.dm.borrow_mut(),
-        order as petsc_rs::Int,
-        num_components as petsc_rs::Int,
-        dim as petsc_rs::Int,
+        order,
+        num_components,
+        dim,
         set_boundary_conditions,
         user_boundary_function,
     )?;
@@ -228,7 +229,7 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
     meles
         .y_loc
         .replace(meles.dm.borrow().create_local_vector()?);
-    let x_loc_size = meles.x_loc.borrow().get_local_size()? as usize;
+    let x_loc_size = meles.x_loc.borrow().local_size()?;
     meles.x_loc_ceed.replace(meles.ceed.vector(x_loc_size)?);
     meles.y_loc_ceed.replace(meles.ceed.vector(x_loc_size)?);
 
@@ -246,7 +247,7 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
         crate::dm::create_restriction_from_dm_plex(&dm, &meles.ceed, 0, None, 0)?
     };
     let restr_x = {
-        let mesh_coord_dm = meles.dm.borrow_mut().get_coordinate_dm_or_create()?;
+        let mesh_coord_dm = meles.dm.borrow_mut().coordinate_dm_or_create()?;
         crate::dm::create_restriction_from_dm_plex(&mesh_coord_dm, &meles.ceed, 0, None, 0)?
     };
     let restr_qdata = {
@@ -264,9 +265,9 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
     let mut qdata = restr_qdata.create_lvector()?;
     let mut coord_loc = {
         let mut dm = meles.dm.borrow_mut();
-        dm.get_coordinates_local()?
+        dm.coordinates_local()?
     };
-    let mut coord_loc_ceed = meles.ceed.vector(coord_loc.get_local_size()? as usize)?;
+    let mut coord_loc_ceed = meles.ceed.vector(coord_loc.local_size()?)?;
     // -- QFunction
     let qf_setup = meles.ceed.q_function_interior_by_name(&setup_name)?;
     let qf_apply = meles.ceed.q_function_interior_by_name(&apply_name)?;

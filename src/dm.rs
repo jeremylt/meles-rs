@@ -6,12 +6,12 @@ use crate::prelude::*;
 // Uniform mesh is recovered for eps=1
 // -----------------------------------------------------------------------------
 pub(crate) fn kershaw_transformation<'a>(
-    mut dm: petsc_rs::dm::DM<'a, 'a>,
-    eps: petsc_rs::Scalar,
+    mut dm: DM<'a, 'a>,
+    eps: petsc::Scalar,
 ) -> crate::Result<()> {
     // Transition from a value of "a" for x=0, to a value of "b" for x=1.  Optionally
     // smooth -- see the commented versions at the end.
-    fn step(a: petsc_rs::Scalar, b: petsc_rs::Scalar, x: petsc_rs::Scalar) -> petsc_rs::Scalar {
+    fn step(a: petsc::Scalar, b: petsc::Scalar, x: petsc::Scalar) -> petsc::Scalar {
         if x <= 0. {
             a
         } else if x >= 1. {
@@ -22,7 +22,7 @@ pub(crate) fn kershaw_transformation<'a>(
     }
 
     // 1D transformation at the right boundary
-    fn right(eps: petsc_rs::Scalar, x: petsc_rs::Scalar) -> petsc_rs::Scalar {
+    fn right(eps: petsc::Scalar, x: petsc::Scalar) -> petsc::Scalar {
         if x <= 0.5 {
             (2. - eps) * x
         } else {
@@ -31,12 +31,12 @@ pub(crate) fn kershaw_transformation<'a>(
     }
 
     // 1D transformation at the left boundary
-    fn left(eps: petsc_rs::Scalar, x: petsc_rs::Scalar) -> petsc_rs::Scalar {
+    fn left(eps: petsc::Scalar, x: petsc::Scalar) -> petsc::Scalar {
         1. - right(eps, 1. - x)
     }
 
-    let mut coords = dm.get_coordinates_local()?;
-    let num_coords = coords.get_local_size()?;
+    let mut coords = dm.coordinates_local()?;
+    let num_coords = coords.local_size()?;
     let mut coord_view = coords.view_mut()?;
 
     // Apply transformations based upon layer
@@ -77,37 +77,22 @@ pub(crate) fn kershaw_transformation<'a>(
 // -----------------------------------------------------------------------------
 pub(crate) fn setup_dm_by_order<'a, BcFn>(
     comm: &'a mpi::topology::UserCommunicator,
-    dm: &mut petsc_rs::dm::DM<'a, 'a>,
-    order: petsc_rs::Int,
-    num_components: petsc_rs::Int,
-    dimemsion: petsc_rs::Int,
+    dm: &mut DM<'a, 'a>,
+    order: usize,
+    num_components: usize,
+    dimemsion: usize,
     enforce_boundary_conditions: bool,
     user_boundary_function: Option<BcFn>,
 ) -> crate::Result<()>
 where
-    BcFn: Fn(
-            petsc_rs::Int,
-            petsc_rs::Real,
-            &[petsc_rs::Real],
-            petsc_rs::Int,
-            &mut [petsc_rs::Scalar],
-        ) -> petsc_rs::Result<()>
-        + 'a,
+    BcFn: Fn(petsc::Int, Real, &[Real], petsc::Int, &mut [petsc::Scalar]) -> petsc::Result<()> + 'a,
 {
     // Setup FE
-    let fe = petsc_rs::dm::FEDisc::create_lagrange(
-        &comm,
-        dimemsion,
-        num_components,
-        false,
-        order,
-        None,
-    )?;
+    let fe = FEDisc::create_lagrange(&comm, dimemsion, num_components, false, order, None)?;
     dm.add_field(None, fe)?;
 
     // Coordinate FE
-    let fe_coords =
-        petsc_rs::dm::FEDisc::create_lagrange(&comm, dimemsion, dimemsion, false, 1, None)?;
+    let fe_coords = FEDisc::create_lagrange(&comm, dimemsion, dimemsion, false, 1, None)?;
     dm.project_coordinates(fe_coords)?;
 
     // Setup DM
@@ -116,10 +101,10 @@ where
         let has_label = dm.has_label("marker")?;
         if !has_label {
             dm.create_label("marker")?;
-            let mut label = dm.get_label("marker")?.unwrap();
+            let mut label = dm.label("marker")?.unwrap();
             dm.plex_mark_boundary_faces(1, &mut label)?;
         }
-        let mut label = dm.get_label("marker")?.unwrap();
+        let mut label = dm.label("marker")?.unwrap();
         dm.add_boundary_essential(
             "wall",
             &mut label,
@@ -138,25 +123,25 @@ where
 // Setup Restriction from DMPlex
 // -----------------------------------------------------------------------------
 pub(crate) fn create_restriction_from_dm_plex<'a, 'b, 'c>(
-    dm: &'a petsc_rs::dm::DM<'b, '_>,
+    dm: &'a DM<'b, '_>,
     ceed: &libceed::Ceed,
-    height: petsc_rs::Int,
-    label: impl Into<Option<&'b petsc_rs::dm::DMLabel<'b>>>,
-    value: petsc_rs::Int,
+    height: usize,
+    label: impl Into<Option<&'b DMLabel<'b>>>,
+    value: usize,
 ) -> crate::Result<ElemRestriction<'c>> {
-    let petsc_rs::dm::DMPlexLocalOffsets {
+    let DMPlexLocalOffsets {
         num_cells,
         cell_size,
         num_components,
         l_size,
         offsets,
-    } = dm.plex_get_local_offsets(label, value, height, 0)?;
+    } = dm.plex_local_offsets(label, value, height, 0)?;
     let elem_restriction = ceed.elem_restriction(
-        num_cells as usize,
-        cell_size as usize,
-        num_components as usize,
+        num_cells,
+        cell_size,
+        num_components,
         1,
-        l_size as usize,
+        l_size,
         MemType::Host,
         &offsets,
     )?;

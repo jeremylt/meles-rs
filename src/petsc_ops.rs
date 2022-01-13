@@ -5,10 +5,10 @@ use crate::prelude::*;
 //   i.e. compute A X = Y
 // -----------------------------------------------------------------------------
 pub(crate) fn apply_local_ceed_op<'a>(
-    x: &petsc_rs::vector::Vector<'a>,
-    y: &mut petsc_rs::vector::Vector<'a>,
+    x: &petsc::vector::Vector<'a>,
+    y: &mut petsc::vector::Vector<'a>,
     meles: &Meles,
-) -> petsc_rs::Result<()> {
+) -> petsc::Result<()> {
     let mut x_loc = meles.x_loc.borrow_mut();
     let mut x_loc_ceed = meles.x_loc_ceed.borrow_mut();
     let mut y_loc = meles.y_loc.borrow_mut();
@@ -17,7 +17,7 @@ pub(crate) fn apply_local_ceed_op<'a>(
     meles
         .dm
         .borrow()
-        .global_to_local(x, petsc_rs::InsertMode::INSERT_VALUES, &mut x_loc)?;
+        .global_to_local(x, InsertMode::INSERT_VALUES, &mut x_loc)?;
     // Apply libCEED operator
     {
         let mut x_loc_view = x_loc.view_mut()?;
@@ -42,17 +42,17 @@ pub(crate) fn apply_local_ceed_op<'a>(
     meles
         .dm
         .borrow()
-        .local_to_global(&y_loc, petsc_rs::InsertMode::ADD_VALUES, y)?;
+        .local_to_global(&y_loc, InsertMode::ADD_VALUES, y)?;
     Ok(())
 }
 
 // -----------------------------------------------------------------------------
 // Compute the diagonal of an operator via libCEED
 // -----------------------------------------------------------------------------
-pub(crate) fn get_diagonal_ceed<'a>(
-    d: &mut petsc_rs::vector::Vector<'a>,
+pub(crate) fn compute_diagonal_ceed<'a>(
+    d: &mut petsc::vector::Vector<'a>,
     meles: &Meles,
-) -> petsc_rs::Result<()> {
+) -> petsc::Result<()> {
     let mut x_loc = meles.x_loc.borrow_mut();
     let mut x_loc_ceed = meles.x_loc_ceed.borrow_mut();
     // Get libCEED operator diagonal
@@ -74,7 +74,7 @@ pub(crate) fn get_diagonal_ceed<'a>(
     meles
         .dm
         .borrow()
-        .local_to_global(&x_loc, petsc_rs::InsertMode::ADD_VALUES, d)?;
+        .local_to_global(&x_loc, InsertMode::ADD_VALUES, d)?;
     Ok(())
 }
 // -----------------------------------------------------------------------------

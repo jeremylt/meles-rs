@@ -9,4 +9,4 @@ edition = "2018"
 [dependencies]
 libceed = { path = "../libCEED/rust/libceed" }
 mpi = { git = "https://github.com/rsmpi/rsmpi.git", rev = "82e1d35", default-features = false }
-petsc-rs = { path = "../petsc-rs" }
+petsc = { path = "../petsc-rs" }

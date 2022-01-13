@@ -10,7 +10,7 @@ pub mod prelude {
     pub use crate::{Meles, MethodType};
     pub(crate) use libceed::prelude::*;
     pub(crate) use mpi;
-    pub(crate) use petsc_rs::prelude::*;
+    pub(crate) use petsc::prelude::*;
     pub(crate) use std::cell::RefCell;
     pub(crate) use std::fmt;
 }
@@ -46,8 +46,8 @@ impl From<libceed::Error> for Error {
     }
 }
 
-impl From<petsc_rs::Error> for Error {
-    fn from(petsc_error: petsc_rs::Error) -> Self {
+impl From<petsc::Error> for Error {
+    fn from(petsc_error: petsc::Error) -> Self {
         Self {
             message: petsc_error.to_string(),
         }
@@ -68,14 +68,14 @@ pub enum MethodType {
 // Meles context
 // -----------------------------------------------------------------------------
 pub struct Meles<'a> {
-    pub(crate) petsc: &'a petsc_rs::Petsc,
+    pub(crate) petsc: &'a petsc::Petsc,
     pub(crate) ceed: libceed::Ceed,
     pub(crate) method: crate::MethodType,
-    pub dm: RefCell<petsc_rs::dm::DM<'a, 'a>>,
-    pub(crate) x_loc: RefCell<petsc_rs::vector::Vector<'a>>,
-    pub(crate) y_loc: RefCell<petsc_rs::vector::Vector<'a>>,
-    pub(crate) x_loc_ceed: RefCell<Vector<'a>>,
-    pub(crate) y_loc_ceed: RefCell<Vector<'a>>,
+    pub dm: RefCell<DM<'a, 'a>>,
+    pub(crate) x_loc: RefCell<petsc::vector::Vector<'a>>,
+    pub(crate) y_loc: RefCell<petsc::vector::Vector<'a>>,
+    pub(crate) x_loc_ceed: RefCell<libceed::vector::Vector<'a>>,
+    pub(crate) y_loc_ceed: RefCell<libceed::vector::Vector<'a>>,
     pub(crate) op_ceed: RefCell<CompositeOperator<'a>>,
 }
 
@@ -99,9 +99,9 @@ impl<'a> Meles<'a> {
     ///
     /// ```
     /// # use meles::prelude::*;
-    /// # use petsc_rs::prelude::*;
+    /// # use petsc::prelude::*;
     /// # fn main() -> meles::Result<()> {
-    /// let petsc = petsc_rs::Petsc::init_no_args()?;
+    /// let petsc = petsc::Petsc::init_no_args()?;
     /// let mut meles = meles::Meles::new(
     ///     &petsc,
     ///     "./examples/meles.yml",
@@ -117,7 +117,7 @@ impl<'a> Meles<'a> {
     /// # }
     /// ```
     pub fn new(
-        petsc: &'a petsc_rs::Petsc,
+        petsc: &'a Petsc,
         yml: impl Into<String> + Clone,
         method: crate::MethodType,
     ) -> Result<Self> {
@@ -129,14 +129,18 @@ impl<'a> Meles<'a> {
         struct Opt {
             ceed_resource: String,
         }
-        impl PetscOpt for Opt {
-            fn from_petsc_opt_builder(pob: &mut PetscOptBuilder) -> petsc_rs::Result<Self> {
-                let ceed_resource =
-                    pob.options_string("-ceed", "Ceed resource specifier", "", "/cpu/self")?;
+        impl petsc::Opt for Opt {
+            fn from_opt_builder(pob: &mut petsc::OptBuilder) -> petsc::Result<Self> {
+                let ceed_resource = pob.options_string(
+                    "-ceed",
+                    "libceed::Ceed resource specifier",
+                    "",
+                    "/cpu/self",
+                )?;
                 Ok(Opt { ceed_resource })
             }
         }
-        let Opt { ceed_resource } = petsc.options_get()?;
+        let Opt { ceed_resource } = petsc.options()?;
 
         // Initial setup
         let ceed = libceed::Ceed::init(&ceed_resource);
@@ -147,9 +151,9 @@ impl<'a> Meles<'a> {
             petsc: &petsc,
             ceed: ceed,
             method: crate::MethodType::BenchmarkProblem,
-            dm: RefCell::new(petsc_rs::dm::DM::plex_create(petsc.world())?),
-            x_loc: RefCell::new(petsc_rs::vector::Vector::create(petsc.world())?),
-            y_loc: RefCell::new(petsc_rs::vector::Vector::create(petsc.world())?),
+            dm: RefCell::new(DM::plex_create(petsc.world())?),
+            x_loc: RefCell::new(petsc::vector::Vector::create(petsc.world())?),
+            y_loc: RefCell::new(petsc::vector::Vector::create(petsc.world())?),
             x_loc_ceed: RefCell::new(x_loc_ceed),
             y_loc_ceed: RefCell::new(y_loc_ceed),
             op_ceed: RefCell::new(op_ceed),
@@ -172,23 +176,23 @@ impl<'a> Meles<'a> {
     ///
     /// ```
     /// # use meles::prelude::*;
-    /// # use petsc_rs::prelude::*;
+    /// # use petsc::prelude::*;
     /// # fn main() -> meles::Result<()> {
-    /// let petsc = petsc_rs::Petsc::init_no_args()?;
+    /// let petsc = petsc::Petsc::init_no_args()?;
     /// let meles = meles::Meles::new(
     ///     &petsc,
     ///     "./examples/meles.yml",
     ///     meles::MethodType::BenchmarkProblem,
     /// )?;
     ///
-    /// # create matshell
+    /// // create matshell
     /// let mat = meles.mat_shell_from_dm()?;
+    /// let mut ksp = petsc.ksp_create()?;
+    /// ksp.set_operators(&mat, &mat)?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn mat_shell_from_dm(
-        &'a self,
-    ) -> Result<petsc_rs::mat::MatShell<'a, 'a, &'a crate::Meles>> {
+    pub fn mat_shell_from_dm(&'a self) -> Result<petsc::mat::MatShell<'a, 'a, &'a crate::Meles>> {
         // Check setup
         assert!(
             self.method == crate::MethodType::BenchmarkProblem,
@@ -204,13 +208,13 @@ impl<'a> Meles<'a> {
 
         // Set operations
         mat.shell_set_operation_mvv(MatOperation::MATOP_MULT, |m, x, y| {
-            let ctx = m.get_mat_data().unwrap();
+            let ctx = m.mat_data().unwrap();
             crate::petsc_ops::apply_local_ceed_op(x, y, ctx)?;
             Ok(())
         })?;
         mat.shell_set_operation_mv(MatOperation::MATOP_GET_DIAGONAL, |m, d| {
-            let ctx = m.get_mat_data().unwrap();
-            crate::petsc_ops::get_diagonal_ceed(d, ctx)?;
+            let ctx = m.mat_data().unwrap();
+            crate::petsc_ops::compute_diagonal_ceed(d, ctx)?;
             Ok(())
         })?;
 
