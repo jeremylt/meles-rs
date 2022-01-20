@@ -80,7 +80,6 @@ pub(crate) fn setup_dm_by_order<'a, BcFn>(
     dm: &mut DM<'a, 'a>,
     order: usize,
     num_components: usize,
-    dimemsion: usize,
     enforce_boundary_conditions: bool,
     user_boundary_function: Option<BcFn>,
 ) -> crate::Result<()>
@@ -88,6 +87,7 @@ where
     BcFn: Fn(petsc::Int, Real, &[Real], petsc::Int, &mut [petsc::Scalar]) -> petsc::Result<()> + 'a,
 {
     // Setup FE
+    let dimemsion = dm.dimension()?;
     let fe = FEDisc::create_lagrange(&comm, dimemsion, num_components, false, order, None)?;
     dm.add_field(None, fe)?;
 

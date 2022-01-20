@@ -1,6 +1,34 @@
 use crate::prelude::*;
 
 // -----------------------------------------------------------------------------
+// BP command line options
+// -----------------------------------------------------------------------------
+struct Opt {
+    problem: CeedBP,
+    order: usize,
+    q_extra: usize,
+}
+
+impl petsc::Opt for Opt {
+    fn from_opt_builder(pob: &mut petsc::OptBuilder) -> petsc::Result<Self> {
+        let problem = pob.options_from_string(
+            "-problem",
+            "CEED benchmark problem to solve",
+            "",
+            CeedBP::BP1,
+        )?;
+        let order =
+            pob.options_usize("-order", "Polynomial order of tensor product basis", "", 3)?;
+        let q_extra = pob.options_usize("-qextra", "Number of extra quadrature points", "", 1)?;
+        Ok(Opt {
+            problem,
+            order,
+            q_extra,
+        })
+    }
+}
+
+// -----------------------------------------------------------------------------
 // BP enum
 // -----------------------------------------------------------------------------
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -115,48 +143,78 @@ pub(crate) fn bp_data(bp: CeedBP) -> crate::Result<BPData> {
     }
 }
 
+// Boundary function
+pub(crate) fn boundary_function_diff(
+    _dim: petsc::Int,
+    _t: Real,
+    x: &[Real],
+    num_components: petsc::Int,
+    u: &mut [petsc::Scalar],
+) -> petsc::Result<()> {
+    let c = [0., 1., 2.];
+    let k = [1., 2., 3.];
+    for i in 0..num_components as usize {
+        u[i] = (std::f64::consts::PI * (c[0] + k[0] * x[0])).sin()
+            * (std::f64::consts::PI * (c[1] + k[1] * x[1])).sin()
+            * (std::f64::consts::PI * (c[2] + k[2] * x[2])).sin();
+    }
+    Ok(())
+}
+
 // -----------------------------------------------------------------------------
 // Setup dm and libCEED operator
 // -----------------------------------------------------------------------------
-pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
-    // Get command line options
-    struct Opt {
-        mesh_file: String,
-        problem: CeedBP,
-        order: usize,
-        q_extra: usize,
-        faces: (usize, usize, usize),
-    }
-    impl petsc::Opt for Opt {
-        fn from_opt_builder(pob: &mut petsc::OptBuilder) -> petsc::Result<Self> {
-            let mesh_file = pob.options_string("-mesh", "Read mesh from file", "", "")?;
-            let problem = pob.options_from_string(
-                "-problem",
-                "CEED benchmark problem to solve",
-                "",
-                CeedBP::BP1,
-            )?;
-            let order =
-                pob.options_usize("-order", "Polynomial order of tensor product basis", "", 3)?;
-            let q_extra =
-                pob.options_usize("-qextra", "Number of extra quadrature points", "", 1)?;
-            let faces = (3, 3, 3);
-            Ok(Opt {
-                mesh_file,
-                problem,
-                order,
-                q_extra,
-                faces,
-            })
-        }
-    }
+pub(crate) fn create_dm(petsc: &Petsc) -> crate::Result<DM<'_, '_>> {
     let Opt {
-        mesh_file,
+        problem,
+        order,
+        q_extra: _,
+    } = petsc.options()?;
+    let BPData {
+        num_components,
+        q_data_size: _,
+        setup_name: _,
+        apply_name: _,
+        input_name: _,
+        output_name: _,
+        q_mode: _,
+        set_boundary_conditions,
+    } = bp_data(problem)?;
+
+    // Create DM
+    let mut dm = DM::create(petsc.world())?;
+    dm.set_type(DMType::DMPLEX)?;
+    dm.set_from_options()?;
+
+    let user_boundary_function = if set_boundary_conditions {
+        Some(boundary_function_diff)
+    } else {
+        None
+    };
+    crate::dm::setup_dm_by_order(
+        petsc.world(),
+        &mut dm,
+        order,
+        num_components,
+        set_boundary_conditions,
+        user_boundary_function,
+    )?;
+
+    Ok(dm)
+}
+
+// -----------------------------------------------------------------------------
+// Setup dm and libCEED operator
+// -----------------------------------------------------------------------------
+pub(crate) fn mat_shell_context<'a>(
+    meles: &'a crate::Meles<'a>,
+    petsc: &'a Petsc,
+) -> crate::Result<crate::MelesMatShellContext<'a>> {
+    let Opt {
         problem,
         order,
         q_extra,
-        faces,
-    } = meles.petsc.options()?;
+    } = petsc.options()?;
     let BPData {
         num_components,
         q_data_size,
@@ -168,86 +226,44 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
         set_boundary_conditions,
     } = bp_data(problem)?;
 
-    // Create DM
-    let dim = 3;
-    let p = order + 1;
-    let q = p + q_extra;
-    let is_simplex = false;
-    let interpolate = true;
-    let dm = if mesh_file != "" {
-        DM::plex_create_from_file(meles.petsc.world(), mesh_file, interpolate)?
-    } else {
-        DM::plex_create_box_mesh(
-            meles.petsc.world(),
-            dim,
-            is_simplex,
-            faces,
-            None,
-            None,
-            None,
-            interpolate,
-        )?
-    };
-
-    // Update mesh DM
-    meles.dm.replace(dm);
-
-    // Set boundaries, order
-    let boundary_function_diff = |_dim: petsc::Int,
-                                  _t: Real,
-                                  x: &[Real],
-                                  num_components: petsc::Int,
-                                  u: &mut [petsc::Scalar]| {
-        let c = [0., 1., 2.];
-        let k = [1., 2., 3.];
-        for i in 0..num_components as usize {
-            u[i] = (std::f64::consts::PI * (c[0] + k[0] * x[0])).sin()
-                * (std::f64::consts::PI * (c[1] + k[1] * x[1])).sin()
-                * (std::f64::consts::PI * (c[2] + k[2] * x[2])).sin();
-        }
-        Ok(())
-    };
+    // Duplicate DM
+    let mut dm = meles.dm.borrow().clone();
     let user_boundary_function = if set_boundary_conditions {
         Some(boundary_function_diff)
     } else {
         None
     };
     crate::dm::setup_dm_by_order(
-        meles.petsc.world(),
-        &mut meles.dm.borrow_mut(),
+        petsc.world(),
+        &mut dm,
         order,
         num_components,
-        dim,
         set_boundary_conditions,
         user_boundary_function,
     )?;
 
     // Create work vectors
-    meles
-        .x_loc
-        .replace(meles.dm.borrow().create_local_vector()?);
-    meles
-        .y_loc
-        .replace(meles.dm.borrow().create_local_vector()?);
-    let x_loc_size = meles.x_loc.borrow().local_size()?;
-    meles.x_loc_ceed.replace(meles.ceed.vector(x_loc_size)?);
-    meles.y_loc_ceed.replace(meles.ceed.vector(x_loc_size)?);
+    let x_loc = dm.create_local_vector()?;
+    let y_loc = dm.create_local_vector()?;
+    let x_loc_size = x_loc.local_size()?;
+    let x_loc_ceed = meles.ceed.vector(x_loc_size)?;
+    let y_loc_ceed = meles.ceed.vector(x_loc_size)?;
 
     // Create libCEED operator
     // -- Basis
+    let p = order + 1;
+    let q = p + q_extra;
+    let dimension = dm.dimension()?;
     let basis_x = meles
         .ceed
-        .basis_tensor_H1_Lagrange(dim, dim, 2, q, q_mode)?;
+        .basis_tensor_H1_Lagrange(dimension, dimension, 2, q, q_mode)?;
     let basis_u = meles
         .ceed
-        .basis_tensor_H1_Lagrange(dim, num_components, p, q, q_mode)?;
+        .basis_tensor_H1_Lagrange(dimension, num_components, p, q, q_mode)?;
     // -- Restrictions
-    let restr_u = {
-        let dm = meles.dm.borrow_mut();
-        crate::dm::create_restriction_from_dm_plex(&dm, &meles.ceed, 0, None, 0)?
-    };
+    let restr_u = crate::dm::create_restriction_from_dm_plex(&dm, &meles.ceed, 0, None, 0)?;
     let restr_x = {
-        let mesh_coord_dm = meles.dm.borrow_mut().coordinate_dm_or_create()?;
+        let mesh_coord_dm = dm.coordinate_dm_or_create()?;
         crate::dm::create_restriction_from_dm_plex(&mesh_coord_dm, &meles.ceed, 0, None, 0)?
     };
     let restr_qdata = {
@@ -300,18 +316,23 @@ pub(crate) fn create_dm(meles: &mut crate::Meles) -> crate::Result<()> {
             .apply(&coord_loc_ceed, &mut qdata)?;
     }
     // -- Operator
-    let op_ceed = meles.ceed.composite_operator()?.sub_operator(
-        &meles
-            .ceed
-            .operator(&qf_apply, QFunctionOpt::None, QFunctionOpt::None)?
-            .field(&input_name, &restr_u, &basis_u, VectorOpt::Active)?
-            .field("qdata", &restr_qdata, BasisOpt::Collocated, &qdata)?
-            .field(&output_name, &restr_u, &basis_u, VectorOpt::Active)?
-            .check()?,
-    )?;
-    meles.op_ceed.replace(op_ceed);
+    let op_ceed = meles
+        .ceed
+        .operator(&qf_apply, QFunctionOpt::None, QFunctionOpt::None)?
+        .field(&input_name, &restr_u, &basis_u, VectorOpt::Active)?
+        .field("qdata", &restr_qdata, BasisOpt::Collocated, &qdata)?
+        .field(&output_name, &restr_u, &basis_u, VectorOpt::Active)?
+        .check()?;
 
-    Ok(())
+    // Return object
+    Ok(crate::MelesMatShellContext {
+        dm: RefCell::new(dm),
+        x_loc: RefCell::new(x_loc),
+        y_loc: RefCell::new(y_loc),
+        x_loc_ceed: RefCell::new(x_loc_ceed),
+        y_loc_ceed: RefCell::new(y_loc_ceed),
+        op_ceed: RefCell::new(op_ceed),
+    })
 }
 
 // -----------------------------------------------------------------------------

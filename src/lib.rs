@@ -7,7 +7,7 @@
 use crate::prelude::*;
 
 pub mod prelude {
-    pub use crate::{Meles, MethodType};
+    pub use crate::{Meles, MelesMatShellContext, MethodType};
     pub(crate) use libceed::prelude::*;
     pub(crate) use mpi;
     pub(crate) use petsc::prelude::*;
@@ -65,18 +65,24 @@ pub enum MethodType {
 }
 
 // -----------------------------------------------------------------------------
-// Meles context
+// Meles MatShell context
 // -----------------------------------------------------------------------------
-pub struct Meles<'a> {
-    pub(crate) petsc: &'a petsc::Petsc,
-    pub(crate) ceed: libceed::Ceed,
-    pub(crate) method: crate::MethodType,
-    pub dm: RefCell<DM<'a, 'a>>,
+pub struct MelesMatShellContext<'a> {
+    pub(crate) dm: RefCell<DM<'a, 'a>>,
     pub(crate) x_loc: RefCell<petsc::vector::Vector<'a>>,
     pub(crate) y_loc: RefCell<petsc::vector::Vector<'a>>,
     pub(crate) x_loc_ceed: RefCell<libceed::vector::Vector<'a>>,
     pub(crate) y_loc_ceed: RefCell<libceed::vector::Vector<'a>>,
-    pub(crate) op_ceed: RefCell<CompositeOperator<'a>>,
+    pub(crate) op_ceed: RefCell<libceed::operator::Operator<'a>>,
+}
+
+// -----------------------------------------------------------------------------
+// Meles context
+// -----------------------------------------------------------------------------
+pub struct Meles<'a> {
+    pub(crate) ceed: libceed::Ceed,
+    pub(crate) method: crate::MethodType,
+    pub dm: RefCell<DM<'a, 'a>>,
 }
 
 // -----------------------------------------------------------------------------
@@ -109,10 +115,7 @@ impl<'a> Meles<'a> {
     /// )?;
     ///
     /// // mesh DM can be borrowed immutably
-    /// let vec = { meles.dm.borrow().create_global_vector()? };
-    ///
-    /// // or mutably
-    /// let dm = meles.dm.borrow_mut();
+    /// let vec = meles.dm.borrow().create_global_vector()?;
     /// # Ok(())
     /// # }
     /// ```
@@ -125,7 +128,7 @@ impl<'a> Meles<'a> {
         let yml = yml.into().clone();
         petsc.options_insert_file(&yml)?;
 
-        // Get ceed resource
+        // Create Ceed
         struct Opt {
             ceed_resource: String,
         }
@@ -141,33 +144,20 @@ impl<'a> Meles<'a> {
             }
         }
         let Opt { ceed_resource } = petsc.options()?;
-
-        // Initial setup
         let ceed = libceed::Ceed::init(&ceed_resource);
-        let x_loc_ceed = ceed.vector(1)?;
-        let y_loc_ceed = ceed.vector(1)?;
-        let op_ceed = ceed.composite_operator()?;
-        let mut meles = Self {
-            petsc: &petsc,
-            ceed: ceed,
-            method: crate::MethodType::BenchmarkProblem,
-            dm: RefCell::new(DM::plex_create(petsc.world())?),
-            x_loc: RefCell::new(petsc::vector::Vector::create(petsc.world())?),
-            y_loc: RefCell::new(petsc::vector::Vector::create(petsc.world())?),
-            x_loc_ceed: RefCell::new(x_loc_ceed),
-            y_loc_ceed: RefCell::new(y_loc_ceed),
-            op_ceed: RefCell::new(op_ceed),
-        };
 
         // Create DM
-        meles.method = method;
-        match method {
-            crate::MethodType::BenchmarkProblem => crate::ceed_bps::create_dm(&mut meles)?,
+        let dm = match method {
+            crate::MethodType::BenchmarkProblem => crate::ceed_bps::create_dm(&petsc)?,
             // TODO: Ratel methods
-        }
+        };
 
         // Return self
-        Ok(meles)
+        Ok(Self {
+            ceed: ceed,
+            method: crate::MethodType::BenchmarkProblem,
+            dm: RefCell::new(dm),
+        })
     }
 
     /// Return a PETSc MatShell for the DM that uses a libCEED operator
@@ -186,35 +176,41 @@ impl<'a> Meles<'a> {
     /// )?;
     ///
     /// // create matshell
-    /// let mat = meles.mat_shell_from_dm()?;
+    /// let mat = meles.mat_shell(&petsc)?;
     /// let mut ksp = petsc.ksp_create()?;
     /// ksp.set_operators(&mat, &mat)?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn mat_shell_from_dm(&'a self) -> Result<petsc::mat::MatShell<'a, 'a, &'a crate::Meles>> {
+    pub fn mat_shell(
+        &'a self,
+        petsc: &'a Petsc,
+    ) -> Result<petsc::mat::MatShell<'a, 'a, crate::MelesMatShellContext<'a>>> {
         // Check setup
         assert!(
             self.method == crate::MethodType::BenchmarkProblem,
             "only supported for BenchmarkProblems"
         );
 
+        // Create MatShellContext
+        let context = crate::ceed_bps::mat_shell_context(&self, &petsc)?;
+
         // Create MatShell from DM
         let mut mat = self
             .dm
             .borrow()
             .create_matrix()?
-            .into_shell(Box::new(self))?;
+            .into_shell(Box::new(context))?;
 
         // Set operations
         mat.shell_set_operation_mvv(MatOperation::MATOP_MULT, |m, x, y| {
-            let ctx = m.mat_data().unwrap();
-            crate::petsc_ops::apply_local_ceed_op(x, y, ctx)?;
+            let context = m.mat_data().unwrap();
+            crate::petsc_ops::apply_local_ceed_op(x, y, context)?;
             Ok(())
         })?;
         mat.shell_set_operation_mv(MatOperation::MATOP_GET_DIAGONAL, |m, d| {
-            let ctx = m.mat_data().unwrap();
-            crate::petsc_ops::compute_diagonal_ceed(d, ctx)?;
+            let context = m.mat_data().unwrap();
+            crate::petsc_ops::compute_diagonal_ceed(d, context)?;
             Ok(())
         })?;
 

@@ -2,3 +2,6 @@ ceed: /cpu/self
 problem: bp1
 order: 3
 qextra: 1
+dm_plex_dim: 3
+dm_plex_box_faces: 5,5,5
+dm_plex_simplex: 0

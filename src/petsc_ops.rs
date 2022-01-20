@@ -7,14 +7,14 @@ use crate::prelude::*;
 pub(crate) fn apply_local_ceed_op<'a>(
     x: &petsc::vector::Vector<'a>,
     y: &mut petsc::vector::Vector<'a>,
-    meles: &Meles,
+    context: &crate::MelesMatShellContext,
 ) -> petsc::Result<()> {
-    let mut x_loc = meles.x_loc.borrow_mut();
-    let mut x_loc_ceed = meles.x_loc_ceed.borrow_mut();
-    let mut y_loc = meles.y_loc.borrow_mut();
-    let mut y_loc_ceed = meles.y_loc_ceed.borrow_mut();
+    let mut x_loc = context.x_loc.borrow_mut();
+    let mut x_loc_ceed = context.x_loc_ceed.borrow_mut();
+    let mut y_loc = context.y_loc.borrow_mut();
+    let mut y_loc_ceed = context.y_loc_ceed.borrow_mut();
     // Global to local
-    meles
+    context
         .dm
         .borrow()
         .global_to_local(x, InsertMode::INSERT_VALUES, &mut x_loc)?;
@@ -31,7 +31,7 @@ pub(crate) fn apply_local_ceed_op<'a>(
             .wrap_slice_mut(&mut y_loc_view_slice)
             .expect("failed to wrap slice");
 
-        meles
+        context
             .op_ceed
             .borrow()
             .apply(&x_loc_ceed, &mut y_loc_ceed)
@@ -39,7 +39,7 @@ pub(crate) fn apply_local_ceed_op<'a>(
     }
     // Local to global
     y.zero_entries()?;
-    meles
+    context
         .dm
         .borrow()
         .local_to_global(&y_loc, InsertMode::ADD_VALUES, y)?;
@@ -51,10 +51,10 @@ pub(crate) fn apply_local_ceed_op<'a>(
 // -----------------------------------------------------------------------------
 pub(crate) fn compute_diagonal_ceed<'a>(
     d: &mut petsc::vector::Vector<'a>,
-    meles: &Meles,
+    context: &crate::MelesMatShellContext,
 ) -> petsc::Result<()> {
-    let mut x_loc = meles.x_loc.borrow_mut();
-    let mut x_loc_ceed = meles.x_loc_ceed.borrow_mut();
+    let mut x_loc = context.x_loc.borrow_mut();
+    let mut x_loc_ceed = context.x_loc_ceed.borrow_mut();
     // Get libCEED operator diagonal
     {
         let mut x_loc_view = x_loc.view_mut()?;
@@ -63,15 +63,15 @@ pub(crate) fn compute_diagonal_ceed<'a>(
             .wrap_slice_mut(&mut x_loc_view_slice)
             .expect("failed to wrap slice");
 
-        meles
+        context
             .op_ceed
             .borrow()
-            .linear_asssemble_diagonal(&mut x_loc_ceed)
+            .linear_assemble_diagonal(&mut x_loc_ceed)
             .expect("failed to compute diagonal of libCEED operator");
     }
     // Local to global
     d.zero_entries()?;
-    meles
+    context
         .dm
         .borrow()
         .local_to_global(&x_loc, InsertMode::ADD_VALUES, d)?;
