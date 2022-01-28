@@ -9,7 +9,6 @@ use crate::prelude::*;
 pub mod prelude {
     pub use crate::{Meles, MelesMatShellContext, MethodType};
     pub(crate) use libceed::prelude::*;
-    pub(crate) use mpi;
     pub(crate) use petsc::prelude::*;
     pub(crate) use std::cell::RefCell;
     pub(crate) use std::fmt;

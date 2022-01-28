@@ -76,7 +76,6 @@ pub(crate) fn kershaw_transformation<'a>(
 // Setup DM
 // -----------------------------------------------------------------------------
 pub(crate) fn setup_dm_by_order<'a, BcFn>(
-    comm: &'a mpi::topology::UserCommunicator,
     dm: &mut DM<'a, 'a>,
     order: usize,
     num_components: usize,
@@ -88,11 +87,11 @@ where
 {
     // Setup FE
     let dimemsion = dm.dimension()?;
-    let fe = FEDisc::create_lagrange(&comm, dimemsion, num_components, false, order, None)?;
+    let fe = FEDisc::create_lagrange(dm.comm(), dimemsion, num_components, false, order, None)?;
     dm.add_field(None, fe)?;
 
     // Coordinate FE
-    let fe_coords = FEDisc::create_lagrange(&comm, dimemsion, dimemsion, false, 1, None)?;
+    let fe_coords = FEDisc::create_lagrange(dm.comm(), dimemsion, dimemsion, false, 1, None)?;
     dm.project_coordinates(fe_coords)?;
 
     // Setup DM

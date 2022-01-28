@@ -192,7 +192,6 @@ pub(crate) fn create_dm(petsc: &Petsc) -> crate::Result<DM<'_, '_>> {
         None
     };
     crate::dm::setup_dm_by_order(
-        petsc.world(),
         &mut dm,
         order,
         num_components,
@@ -234,7 +233,6 @@ pub(crate) fn mat_shell_context<'a>(
         None
     };
     crate::dm::setup_dm_by_order(
-        petsc.world(),
         &mut dm,
         order,
         num_components,
@@ -263,7 +261,7 @@ pub(crate) fn mat_shell_context<'a>(
     // -- Restrictions
     let restr_u = crate::dm::create_restriction_from_dm_plex(&dm, &meles.ceed, 0, None, 0)?;
     let restr_x = {
-        let mesh_coord_dm = dm.coordinate_dm_or_create()?;
+        let mesh_coord_dm = dm.coordinate_dm()?;
         crate::dm::create_restriction_from_dm_plex(&mesh_coord_dm, &meles.ceed, 0, None, 0)?
     };
     let restr_qdata = {
